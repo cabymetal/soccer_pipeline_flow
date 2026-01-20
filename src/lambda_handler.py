@@ -44,13 +44,16 @@ def read_api_client(api_type: str):
     return client
 
 
-def lambda_handler(event, context):
+def lambda_handler(event: dict, context: dict) -> dict:
     # Example usage of the SoccerAPIFactory
     api_key = get_client_secret()
     #add selection logic for different API factories
     factory = read_api_client("soccer")
     api_client = factory(api_key=api_key).create_api_client()
     # Now you can use api_client to interact with the Soccer API
+    api_client.authenticate(api_key)
+
+
     return {
         'statusCode': 200,
         'body': json.dumps('API client created successfully!')
