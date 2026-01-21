@@ -50,9 +50,43 @@ def lambda_handler(event: dict, context: dict) -> dict:
     #add selection logic for different API factories
     factory = read_api_client("soccer")
     api_client = factory(api_key=api_key).create_api_client()
+
+    #get payload from event if needed
+    event_action = event.get('action', None)
+    event_league = event.get('league', None)
+    event_season = event.get('season', None)
+    event_teamid = event.get('teamid', None)
+    
     # Now you can use api_client to interact with the Soccer API
     api_client.authenticate(api_key)
 
+    if event_action == 'get_teams_from_league' and event_league and event_season:
+        teams_from_league = api_client.get_teams_from_league(
+                league = event_league, 
+                season = event_season
+                )
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps(teams_from_league)
+        }
+    if event_league and event_season and event_teamid:
+        if event_action == 'get_team_stats':
+            message = api_client.get_team_stats(league=event_league,
+                                                season=event_season,
+                                                team_id=event_teamid)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(message)
+            }
+        elif event_action == 'get_team_players':
+            players = api_client.get_team_players(league=event_league,
+                                                  season=event_season,
+                                                  team_id=event_teamid)
+            return {
+                'statusCode': 200,
+                'body': json.dumps(players)
+            }
 
     return {
         'statusCode': 200,
