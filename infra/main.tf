@@ -133,3 +133,17 @@ resource "aws_lambda_function" "lambda_function" {
     }
   
 }
+
+##################################
+#       Step Function            #
+##################################
+
+resource "aws_sfn_state_machine" "soccer_workflow" {
+    name     = "soccer_data_workflow"
+    role_arn = aws_iam_role.lambda_exec_role.arn
+
+    definition = templatefile("${path.module}/definitions/soccer_workflow.json.tpl", {
+        setup_array_tuple = var.setup_array_tuple,
+        lambda_soccer_arn = aws_lambda_function.lambda_function.arn
+    })
+}

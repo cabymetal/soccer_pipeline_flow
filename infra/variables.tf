@@ -11,3 +11,17 @@ variable "api_soccer_api_key" {
     #just for testing purposes, in real life you would use Secrets Manager
     default = "prod/soccer/api"
 }
+
+variable "setup_array_tuple" {
+  description = "Tuple to setup array resources"
+  type = list(object({league: number, season: number}))
+  default = [
+    {"league": 140, "season": 2024},
+    {"league": 140, "season": 2025},
+    {"league": 39, "season": 2024},
+    {"league": 39, "season": 2025},
+    {"league": 239, "season": 2024},
+    {"league": 239, "season": 2025},
+    {"league": 239, "season": 2026}
+  ]
+}

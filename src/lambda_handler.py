@@ -68,7 +68,7 @@ def lambda_handler(event: dict, context: dict) -> dict:
         
         return {
             'statusCode': 200,
-            'body': json.dumps(teams_from_league)
+            'teams': json.dumps(teams_from_league)
         }
     if event_league and event_season and event_teamid:
         if event_action == 'get_team_stats':
