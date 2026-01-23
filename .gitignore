@@ -7,3 +7,6 @@ infra/terraform
 __pycache__/
 *.pyc
 .env
+*.zip
+lambda_layer/
+layer/

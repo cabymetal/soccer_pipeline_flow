@@ -25,3 +25,10 @@ variable "setup_array_tuple" {
     {"league": 239, "season": 2026}
   ]
 }
+
+variable "lambda_layer_with_pandas" {
+  description = "managed layer that includes pandas and requests library"
+  type = string
+  default = "arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:12"
+  
+}

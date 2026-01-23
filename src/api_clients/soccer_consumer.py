@@ -1,4 +1,4 @@
-from API import APIClient
+from api_clients.API import APIClient
 import requests
 import boto3
 import pandas as pd
@@ -19,7 +19,7 @@ class soccer_consumer(APIClient):
         Authenticate the Soccer API client using the provided API key.
         """
         self.headers = {
-            "X-RapidAPI-Key": api_key
+            "x-apisports-key": api_key
         }
 
     def _generate_hadoop_partition_path(self, **kwargs) -> str:
@@ -235,6 +235,15 @@ class soccer_consumer(APIClient):
             return buffer
         
         return buffer
+    
+    def fetch_data(self, endpoint):
+        """
+        Placeholder method to satisfy abstract base class requirement
+        TODO: Implement if needed
+        Args:
+            endpoint: API endpoint to fetch from
+        """
+        pass
 
 
 

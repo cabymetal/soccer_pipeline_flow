@@ -5,7 +5,7 @@
         "Set Parameters": {
             "Type": "Pass",
             "Parameters": {
-                "array_tuple_league_season": "${setup_array_tuple}"
+                "array_tuple_league_season": ${setup_array_tuple}
             },
             "Comment": "Sets the parameters for different leagues and seasons",
             "Next": "Map Over Leagues and Seasons"
@@ -35,78 +35,66 @@
                     },
                     "Map Over Teams": {
                         "Type": "Map",
-                        "ItemsPath": "$.Payload.teams",
+                        "ItemsPath": "States.StringToJson($.Payload.teams)",
                         "Parameters": {
                             "league.$": "$.league",
                             "season.$": "$.season",
-                            "team_id.$": "$$.Map.Item.Value.team_id"
+                            "team_id.$": "$$.Map.Item.Value.team"
                         },
                         "Iterator": {
-                            "StartAt": "Soccer Data Workflow",
+                            "StartAt": "Get teams stats and players stats",
                             "States": {
-                                "Soccer Data Workflow": {
-                                    "Type": "Map",
-                                    "ItemsPath": "$.team_id",
-                                    "Parameters": {
-                                        "league.$": "$.league",
-                                        "season.$": "$.season",
-                                        "team_id.$": "$$.Map.Item.Value"
-                                    },
-                                    "Iterator": {
-                                        "StartAt": "Get teams stats and players stats",
-                                        "States": {
-                                            "Get teams stats and players stats": {
-                                                "Type": "Parallel",
-                                                "Branches": [
-                                                    {
-                                                        "StartAt": "Fetch Team Stats",
-                                                        "States": {
-                                                            "Fetch Team Stats": {
-                                                                "Type": "Task",
-                                                                "Resource": "arn:aws:states:::lambda:invoke",
-                                                                "Parameters": {
-                                                                    "FunctionName": "${lambda_soccer_arn}",
-                                                                    "Payload": {
-                                                                        "league.$": "$.league",
-                                                                        "season.$": "$.season",
-                                                                        "team_id.$": "$.team_id",
-                                                                        "action": "get_team_stats"
-                                                                    }
-                                                                },
-                                                                "End": true
-                                                            }
+                                "Get teams stats and players stats": {
+                                    "Type": "Parallel",
+                                    "Branches": [
+                                        {
+                                            "StartAt": "Fetch Team Stats",
+                                            "States": {
+                                                "Fetch Team Stats": {
+                                                    "Type": "Task",
+                                                    "Resource": "arn:aws:states:::lambda:invoke",
+                                                    "Parameters": {
+                                                        "FunctionName": "${lambda_soccer_arn}",
+                                                        "Payload": {
+                                                            "league.$": "$.league",
+                                                            "season.$": "$.season",
+                                                            "team_id.$": "$.team_id",
+                                                            "action": "get_team_stats"
                                                         }
                                                     },
-                                                    {
-                                                        "StartAt": "Fetch Players Stats",
-                                                        "States": {
-                                                            "Fetch Players Stats": {
-                                                                "Type": "Task",
-                                                                "Resource": "arn:aws:states:::lambda:invoke",
-                                                                "Parameters": {
-                                                                    "FunctionName": "${lambda_soccer_arn}",
-                                                                    "Payload": {
-                                                                        "league.$": "$.league",
-                                                                        "season.$": "$.season",
-                                                                        "team_id.$": "$.team_id",
-                                                                        "action": "get_team_players"
-                                                                    }
-                                                                },
-                                                                "End": true
-                                                            }
+                                                    "End": true
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "StartAt": "Fetch Players Stats",
+                                            "States": {
+                                                "Fetch Players Stats": {
+                                                    "Type": "Task",
+                                                    "Resource": "arn:aws:states:::lambda:invoke",
+                                                    "Parameters": {
+                                                        "FunctionName": "${lambda_soccer_arn}",
+                                                        "Payload": {
+                                                            "league.$": "$.league",
+                                                            "season.$": "$.season",
+                                                            "team_id.$": "$.team_id",
+                                                            "action": "get_team_players"
                                                         }
-                                                    }
-                                                ],
-                                                "End": true
+                                                    },
+                                                    "End": true
+                                                }
                                             }
                                         }
-                                    }
+                                    ],
+                                    "End": true
                                 }
                             }
-                        }
+                        },
+                        "End": true
                     }
                 }
-            }
+            },
+            "End": true
         }
     }
 }

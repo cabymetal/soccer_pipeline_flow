@@ -21,15 +21,14 @@ def get_client_secret():
 
     try:
         get_secret_value_response = client.get_secret_value(
-            SecretId='my_secret_id'
+            SecretId='prod/soccer/api'
         )
-        secret = get_secret_value_response['SecretString']
+        secret_id = get_secret_value_response['SecretString']
     except ClientError as e:
         logging.error(f"Unable to retrieve secret: {e}")
         raise e
     
-    secret_dict = json.loads(secret)
-    return secret_dict['api_key']
+    return json.loads(secret_id)['SOCCER_API_TOKEN']
 
 def read_api_client(api_type: str):
     factories = {
@@ -40,9 +39,7 @@ def read_api_client(api_type: str):
     if not factory_class:
         raise ValueError(f"Unsupported API type: {api_type}")
     
-    client = factory_class.create_api_client()
-    return client
-
+    return factory_class
 
 def lambda_handler(event: dict, context: dict) -> dict:
     # Example usage of the SoccerAPIFactory
@@ -77,6 +74,7 @@ def lambda_handler(event: dict, context: dict) -> dict:
                                                 team_id=event_teamid)
             return {
                 'statusCode': 200,
+                **event,
                 'body': json.dumps(message)
             }
         elif event_action == 'get_team_players':
@@ -85,10 +83,12 @@ def lambda_handler(event: dict, context: dict) -> dict:
                                                   team_id=event_teamid)
             return {
                 'statusCode': 200,
+                **event,
                 'body': json.dumps(players)
             }
 
     return {
-        'statusCode': 200,
-        'body': json.dumps('API client created successfully!')
+        'statusCode': 204,
+        **event,
+        'body': json.dumps('not recognized action or missing parameters')
     }
