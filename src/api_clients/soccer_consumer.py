@@ -6,6 +6,7 @@ import os
 import io
 import logging
 import time
+import copy
 from botocore.exceptions import ClientError
 
 class soccer_consumer(APIClient):
@@ -44,6 +45,8 @@ class soccer_consumer(APIClient):
         if team_id:
             filename = f'{team_id}.json'
             kwargs.pop('team_id', None)
+            # need to encode string buffer to bytes
+            response_content = response_content.getvalue().encode('utf-8')
         else:
             filename = 'data.parquet'
         
@@ -51,7 +54,7 @@ class soccer_consumer(APIClient):
         partition_path = self._generate_hadoop_partition_path(**kwargs)
         
         # Construct S3 key with Hadoop partitioning
-        s3_key = f"{endpoint.replace('/', '_')}/{partition_path}/{filename}",
+        s3_key = f"{endpoint.replace('/', '_')}/{partition_path}/{filename}"
         try:
             response = s3_client.put_object( 
                 Bucket = self.bucket_name,
@@ -126,10 +129,11 @@ class soccer_consumer(APIClient):
         teams_from_league = []
         counter = 1
         for item in all_data:
-            kwargs = {'team': item['team']['id'], **kwargs}
-            teams_from_league.append(kwargs)
+            team_dict = {'team': item['team']['id'], **kwargs}
+            teams_from_league.append(copy.deepcopy(team_dict))
+            team_dict.pop('team', None)
             if counter % 5 == 0 and counter != 0:
-                time.sleep(60)  # To respect API rate limits
+                time.sleep(30)  # To respect API rate limits
             counter += 1
         
         return teams_from_league
@@ -144,36 +148,42 @@ class soccer_consumer(APIClient):
         #TODO handle cases where data is missing or incomplete
         #TODO add logging for missing data scenarios
         item = data.get('response', {})
+        if isinstance(item, list):
+            for itm in item:
+                if itm.get('team', {}).get('id') == kwargs.get('team'):
+                    item = itm
+                    break
+
         team_item = {
-            'team_id' : item['team']['id'],
-            'name': item['team']['name'],
-            'form': item['form'],
-            'fixtures_played': item['fixtures']['played'],
-            'fixtures_wins': item['fixtures']['wins'],
-            'fixtures_draws': item['fixtures']['draws'],
-            'fixtures_losses': item['fixtures']['loses'],
-            'goals_for': item['goals']['for'],
-            'goals_against': item['goals']['against'],
-            'biggest_wins': item['biggest']['wins'],
-            'biggest_losses': item['biggest']['loses'],
-            'clean_sheets_home': item['clean_sheet']['home'],
-            'clean_sheets_away': item['clean_sheet']['away'],
-            'clean_sheets_total': item['clean_sheet']['total'],
-            'failed_to_score_home': item['failed_to_score']['home'],
-            'failed_to_score_away': item['failed_to_score']['away'],
-            'failed_to_score_total': item['failed_to_score']['total'],
-            'penalties_scored': item['penalty']['scored'],
-            'penalties_missed': item['penalty']['missed'],
-            'lineups': item['lineups'],
-            'yellow_cards': item['cards']['yellow'],
-            'red_cards': item['cards']['red']
+            'team_id' : item.get('team', {}).get('id'),
+            'name': item.get('team', {}).get('name'),
+            'form': item.get('form'),
+            'fixtures_played': item.get('fixtures', {}).get('played'),
+            'fixtures_wins': item.get('fixtures', {}).get('wins'),
+            'fixtures_draws': item.get('fixtures', {}).get('draws'),
+            'fixtures_losses': item.get('fixtures', {}).get('loses'),
+            'goals_for': item.get('goals', {}).get('for'),
+            'goals_against': item.get('goals', {}).get('against'),
+            'biggest_wins': item.get('biggest', {}).get('wins'),
+            'biggest_losses': item.get('biggest', {}).get('loses'),
+            'clean_sheets_home': item.get('clean_sheet', {}).get('home'),
+            'clean_sheets_away': item.get('clean_sheet', {}).get('away'),
+            'clean_sheets_total': item.get('clean_sheet', {}).get('total'),
+            'failed_to_score_home': item.get('failed_to_score', {}).get('home'),
+            'failed_to_score_away': item.get('failed_to_score', {}).get('away'),
+            'failed_to_score_total': item.get('failed_to_score', {}).get('total'),
+            'penalties_scored': item.get('penalty', {}).get('scored'),
+            'penalties_missed': item.get('penalty', {}).get('missed'),
+            'lineups': item.get('lineups'),
+            'yellow_cards': item.get('cards', {}).get('yellow'),
+            'red_cards': item.get('cards', {}).get('red')
         }
 
         df = pd.DataFrame([team_item])
         buffer = self.generate_buffer_from_dataframe(df, 'json')
-        kwargs = {'team_id': item['team']['id'], **kwargs}
+        kwargs = {'team_id': item.get('team', {}).get('id'), **kwargs}
         self._save_raw_response_to_s3(buffer, endpoint, **kwargs)
-        message = f"get_team_stats completed for team_id: {item['team']['id']} with parameters: {kwargs}"
+        message = f"get_team_stats completed for team_id: {item.get('team', {}).get('id')} with parameters: {kwargs}"
         logging.info(message)
         return message
     
@@ -188,33 +198,34 @@ class soccer_consumer(APIClient):
         players_list = []
         for page in range(2, total_pages + 1):
             kwargs['page'] = page
-            for item in data['response']:
-                player = item['player']
-                stats = item['statistics'][0] # Stats for the specified season and league
+            for item in data:
+                player = item.get('player', {})
+                stats = item.get('statistics', [{}])[0] # Stats for the specified season and league
+                
                 player_info = {
-                    'player_id': player['id'],
-                    'name': player['name'],
-                    'age': player['age'],
-                    'first_name': player['firstname'],
-                    'last_name': player['lastname'],
-                    'games': stats['games'],
-                    'goals': stats['goals'],
-                    'passes': stats['passes'],
-                    'tackles': stats['tackles'],
-                    'cards': stats['cards'],
-                    'penalty': stats['penalty'],
-                    'dribbles': stats['dribbles'],
-                    'fouls': stats['fouls']
+                    'player_id': player.get('id'),
+                    'name': player.get('name'),
+                    'age': player.get('age'),
+                    'first_name': player.get('firstname'),
+                    'last_name': player.get('lastname'),
+                    'games': stats.get('games'),
+                    'goals': stats.get('goals'),
+                    'passes': stats.get('passes'),
+                    'tackles': stats.get('tackles'),
+                    'cards': stats.get('cards'),
+                    'penalty': stats.get('penalty'),
+                    'dribbles': stats.get('dribbles'),
+                    'fouls': stats.get('fouls')
                 }
-                players_list.append(player_info)
+                players_list.append(copy.deepcopy(player_info))
             if page % 5 == 0 and page != 0:
-                time.sleep(60)  # To respect API rate limits
+                time.sleep(30)  # To respect API rate limits
 
             data = self._make_request(endpoint=endpoint, **kwargs).get('response', [])
-            df = pd.DataFrame(players_list)
-            buffer = self.generate_buffer_from_dataframe(df, 'parquet')
-            kwargs.pop('page', None)
-            self._save_raw_response_to_s3(buffer, endpoint, **kwargs)
+        df = pd.DataFrame(players_list)
+        buffer = self.generate_buffer_from_dataframe(df, 'parquet')
+        kwargs.pop('page', None)
+        self._save_raw_response_to_s3(buffer, endpoint, **kwargs)
         
         message = f"get_team_players completed for team_id: {kwargs.get('team')} with parameters: {kwargs}"
         logging.info(message)
@@ -228,12 +239,10 @@ class soccer_consumer(APIClient):
         if extension == 'parquet':
             buffer = io.BytesIO()
             df.to_parquet(buffer, index=False)
-            return buffer
         elif extension == 'json':
             buffer = io.StringIO()
             df.to_json(buffer, orient='records', lines=True)
-            return buffer
-        
+        buffer.seek(0)
         return buffer
     
     def fetch_data(self, endpoint):

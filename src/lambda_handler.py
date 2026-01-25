@@ -71,7 +71,7 @@ def lambda_handler(event: dict, context: dict) -> dict:
         if event_action == 'get_team_stats':
             message = api_client.get_team_stats(league=event_league,
                                                 season=event_season,
-                                                team_id=event_teamid)
+                                                team=event_teamid)
             return {
                 'statusCode': 200,
                 **event,
@@ -80,7 +80,7 @@ def lambda_handler(event: dict, context: dict) -> dict:
         elif event_action == 'get_team_players':
             players = api_client.get_team_players(league=event_league,
                                                   season=event_season,
-                                                  team_id=event_teamid)
+                                                  team=event_teamid)
             return {
                 'statusCode': 200,
                 **event,
@@ -92,3 +92,14 @@ def lambda_handler(event: dict, context: dict) -> dict:
         **event,
         'body': json.dumps('not recognized action or missing parameters')
     }
+
+if __name__ == "__main__":
+    # For local testing purposes
+    test_event = {
+       "action": "get_team_stats",
+      "league": 140,
+      "teamid": 536,
+      "season": 2024
+    }
+    response = lambda_handler(test_event, None)
+    print(response)
