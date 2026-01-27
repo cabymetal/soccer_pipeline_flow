@@ -3,11 +3,38 @@
     "StartAt": "Set Parameters",
     "States": {
         "Set Parameters": {
+            "Type": "Choice",
+            "Comment": "Check if league and season are provided as input parameters",
+            "Choices": [
+                {
+                    "Variable": "$.league",
+                    "IsPresent": true,
+                    "Variable": "$.season",
+                    "IsPresent": true,
+                    "Next": "Use Input Parameters"
+                }
+            ],
+            "Default": "Use Setup Array"
+        },
+        "Use Input Parameters": {
+            "Type": "Pass",
+            "Parameters": {
+                "array_tuple_league_season": [
+                    {
+                        "league.$": "$.league",
+                        "season.$": "$.season"
+                    }
+                ]
+            },
+            "Comment": "Uses the provided league and season parameters",
+            "Next": "Map Over Leagues and Seasons"
+        },
+        "Use Setup Array": {
             "Type": "Pass",
             "Parameters": {
                 "array_tuple_league_season": ${setup_array_tuple}
             },
-            "Comment": "Sets the parameters for different leagues and seasons",
+            "Comment": "Uses the setup_array_tuple configuration",
             "Next": "Map Over Leagues and Seasons"
         },
         "Map Over Leagues and Seasons": {

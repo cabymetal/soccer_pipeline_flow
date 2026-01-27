@@ -16,13 +16,10 @@ variable "setup_array_tuple" {
   description = "Tuple to setup array resources"
   type = list(object({league: number, season: number}))
   default = [
-    {"league": 140, "season": 2024},
-    {"league": 140, "season": 2025},
-    {"league": 39, "season": 2024},
-    {"league": 39, "season": 2025},
-    {"league": 239, "season": 2024},
-    {"league": 239, "season": 2025},
-    {"league": 239, "season": 2026}
+    {"league": 140, "season": 2023},
+    {"league": 39, "season": 2023},
+    {"league": 239, "season": 2023},
+    {"league": 239, "season": 2022}
   ]
 }
 
