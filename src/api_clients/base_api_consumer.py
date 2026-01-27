@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-class APIClient(ABC):
+class base_api_consumer(ABC):
 
     @abstractmethod
     def authenticate(self, api_key: str) -> None:

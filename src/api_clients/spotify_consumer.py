@@ -1,4 +1,4 @@
-from API import APIClient
+from API import base_api_consumer
 import pandas as pd
 import requests
 import base64
@@ -8,7 +8,7 @@ import os
 
 load_dotenv()
 
-class SpotifyConsumer(APIClient):
+class SpotifyConsumer(base_api_consumer):
 
     def __init__(self):
         self.base_url = "https://api.spotify.com/v1/"

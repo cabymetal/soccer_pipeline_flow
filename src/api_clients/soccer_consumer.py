@@ -1,4 +1,4 @@
-from api_clients.API import APIClient
+from api_clients.API import base_api_consumer
 import requests
 import boto3
 import pandas as pd
@@ -9,7 +9,7 @@ import time
 import copy
 from botocore.exceptions import ClientError
 
-class soccer_consumer(APIClient):
+class soccer_consumer(base_api_consumer):
     def __init__(self, api_key: str = None):
         self.base_url = "https://v3.football.api-sports.io"
         self.api_key = api_key
