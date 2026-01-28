@@ -172,6 +172,180 @@ Data is stored in the `cmurillo-target-bucket` S3 bucket. Bucket policy:
 4. **Execute**: Trigger Step Function manually or via CloudWatch Events
 5. **Monitor**: Check CloudWatch Logs for execution details
 
+## LocalStack Configuration
+
+For local development and testing, this project can be deployed to **LocalStack** - a local AWS cloud emulator.
+
+### Prerequisites
+
+- Docker and Docker Compose installed
+- `docker-compose.yml` configured in the project root
+
+### Docker Compose Setup
+
+```yaml
+services:
+  localstack:
+    container_name: localstack_main
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - DEBUG=1
+      - DATA_DIR=/var/lib/localstack/data
+    volumes:
+      - "local_data:/var/lib/localstack"
+
+volumes:
+  local_data:
+```
+
+### Starting LocalStack
+
+```bash
+docker-compose up -d localstack
+```
+
+Verify it's running:
+```bash
+docker ps | grep localstack
+curl http://localhost:4566/
+```
+
+### Terraform Configuration for LocalStack
+
+The project uses **Terraform Workspaces** to manage different environments:
+
+#### Test Environment (LocalStack)
+```bash
+terraform workspace new test
+terraform workspace select test
+terraform apply
+```
+
+Configuration in `locals.tf`:
+```hcl
+test_config = {
+    access_key           = "test"
+    secret_key           = "test"
+    region               = "us-east-1"
+    localstack_endpoint  = "http://localhost:4566"  # LocalStack endpoint
+    lambda_layer_arn     = null  # No layers in test
+    tags                 = { Environment = "Test" }
+}
+```
+
+#### Production Environment (AWS)
+```bash
+terraform workspace new prod
+terraform workspace select prod
+terraform apply
+```
+
+Configuration in `locals.tf`:
+```hcl
+prod_config = {
+    region               = "us-east-1"
+    lambda_layer_arn     = "arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:12"
+    tags                 = { Environment = "Production" }
+}
+```
+
+### Provider Configuration
+
+The AWS provider is configured to use LocalStack when deployed in test workspace:
+
+```hcl
+provider "aws" {
+    region = local.current.region
+    access_key = local.current.access_key
+    secret_key = local.current.secret_key
+    
+    # LocalStack validation skip
+    skip_credentials_validation = local.current.localstack_endpoint != null
+    skip_metadata_api_check     = local.current.localstack_endpoint != null
+    skip_requesting_account_id  = local.current.localstack_endpoint != null
+    
+    # S3 path-style addressing for LocalStack compatibility
+    s3_use_path_style = local.current.localstack_endpoint != null
+    
+    # LocalStack service endpoints
+    endpoints {
+        lambda         = local.current.localstack_endpoint
+        s3             = local.current.localstack_endpoint
+        secretsmanager = local.current.localstack_endpoint
+        iam            = local.current.localstack_endpoint
+        stepfunctions  = local.current.localstack_endpoint
+    }
+}
+```
+
+### Key LocalStack Configurations
+
+| Setting | Purpose | Value |
+|---------|---------|-------|
+| `s3_use_path_style` | Disables virtual-hosted-style S3 addressing | `true` for LocalStack |
+| `localstack_endpoint` | Routes all AWS API calls to LocalStack | `http://localhost:4566` |
+| `skip_credentials_validation` | Bypasses AWS credential validation | `true` for LocalStack |
+| `skip_metadata_api_check` | Skips EC2 metadata check | `true` for LocalStack |
+| `skip_requesting_account_id` | Skips account ID validation | `true` for LocalStack |
+
+### Lambda Layer Configuration
+
+- **Test (LocalStack)**: `lambda_layer_arn = null` - No external layers
+- **Prod (AWS)**: `lambda_layer_arn = "arn:aws:lambda:..."` - Managed layer with Pandas/requests
+
+This avoids layer dependency issues when testing with LocalStack.
+
+### Testing with LocalStack
+
+After deploying to LocalStack:
+
+```bash
+# List resources
+aws s3 ls --endpoint-url http://localhost:4566
+
+# Invoke Lambda function
+aws lambda invoke \
+  --function-name api_consumer_lambda \
+  --endpoint-url http://localhost:4566 \
+  --payload '{"league": 239, "season": 2024}' \
+  response.json
+
+# Start Step Function execution
+aws stepfunctions start-execution \
+  --state-machine-arn arn:aws:states:us-east-1:000000000000:stateMachine:soccer_data_workflow \
+  --endpoint-url http://localhost:4566 \
+  --input '{"league": 239, "season": 2024}'
+```
+
+### Troubleshooting LocalStack
+
+**Error: "dial tcp: lookup localstack: no such host"**
+- LocalStack is not running or not accessible
+- Verify with: `docker ps | grep localstack`
+- Check endpoint URL in `locals.tf` is correct
+
+**Error: "couldn't find resource" (Secrets Manager)**
+- Secret doesn't exist in LocalStack
+- Secrets Manager is optional - can be commented out in `main.tf`
+
+**Error: "S3 path style addressing"**
+- Ensure `s3_use_path_style = true` is set in provider
+- Required for LocalStack S3 compatibility
+
+**Error: "Step Functions validation failed"**
+- Ensure `stepfunctions` endpoint is configured in provider
+- Validate JSON template syntax in `soccer_workflow.json.tpl`
+
+## Deployment Workflow
+
+1. **Local Development**: Test Lambda code locally with mock events
+2. **Package**: Terraform automatically zips the `src/` directory
+3. **Deploy**: `terraform apply` deploys all resources
+4. **Execute**: Trigger Step Function manually or via CloudWatch Events
+5. **Monitor**: Check CloudWatch Logs for execution details
+
 ## Usage
 
 ### Manual Lambda Invocation
