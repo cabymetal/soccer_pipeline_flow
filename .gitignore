@@ -10,3 +10,13 @@ __pycache__/
 *.zip
 lambda_layer/
 layer/
+.databricks/
+build/
+dist/
+__pycache__/
+*.egg-info
+.venv/
+scratch/**
+!scratch/README.md
+**/explorations/**
+**/!explorations/README.md
