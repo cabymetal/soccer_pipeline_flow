@@ -1,4 +1,4 @@
-from API import base_api_consumer
+from api_clients.base_api_consumer import base_api_consumer
 import pandas as pd
 import requests
 import base64

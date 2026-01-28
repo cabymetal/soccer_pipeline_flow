@@ -1,4 +1,4 @@
-from api_clients.API import base_api_consumer
+from api_clients.base_api_consumer import base_api_consumer
 import requests
 import boto3
 import pandas as pd

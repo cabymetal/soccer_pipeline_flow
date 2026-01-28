@@ -7,10 +7,16 @@
             "Comment": "Check if league and season are provided as input parameters",
             "Choices": [
                 {
-                    "Variable": "$.league",
-                    "IsPresent": true,
-                    "Variable": "$.season",
-                    "IsPresent": true,
+                    "And": [
+                        {
+                            "Variable": "$.league",
+                            "IsPresent": true
+                        },
+                        {
+                            "Variable": "$.season",
+                            "IsPresent": true
+                        }
+                    ],
                     "Next": "Use Input Parameters"
                 }
             ],

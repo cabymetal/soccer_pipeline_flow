@@ -3,7 +3,7 @@ Class that provides factory methods to create API clients for different services
 """
 from abc import ABC, abstractmethod
 
-from api_clients.API import base_api_consumer
+from api_clients.base_api_consumer import base_api_consumer
 
 class APIFactory(ABC):
     @abstractmethod

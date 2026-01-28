@@ -9,7 +9,23 @@ terraform {
 
 
 provider "aws" {
-    region = var.aws_region
+    region = local.current.region
+    access_key = local.current.access_key
+    secret_key = local.current.secret_key
+    # Only required for LocalStack to skip validations
+    skip_credentials_validation = local.current.localstack_endpoint != null
+    skip_metadata_api_check     = local.current.localstack_endpoint != null
+    skip_requesting_account_id  = local.current.localstack_endpoint != null
+    # Force path-style addressing for S3 with LocalStack
+    s3_use_path_style = local.current.localstack_endpoint != null
+    endpoints {
+        lambda         = local.current.localstack_endpoint
+        s3             = local.current.localstack_endpoint
+        secretsmanager = local.current.localstack_endpoint
+        iam            = local.current.localstack_endpoint
+        stepfunctions  = local.current.localstack_endpoint
+    }
+
 }
 
 
@@ -164,7 +180,7 @@ resource "aws_lambda_function" "lambda_function" {
     filename      = data.archive_file.lambda_zip.output_path
 
     source_code_hash = data.archive_file.lambda_zip.output_base64sha256
-    layers          = [var.lambda_layer_with_pandas]
+    layers          = local.current.lambda_layer_arn != null ? [local.current.lambda_layer_arn] : []
 
     timeout = 600 # 10 minutes
 
