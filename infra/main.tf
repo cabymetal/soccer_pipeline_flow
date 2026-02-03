@@ -127,6 +127,87 @@ resource "aws_iam_role_policy" "lambda_s3_write_policy" {
   
 }
 
+resource "aws_iam_role_policy" "databricks_s3_access_policy" {
+    name = "databricks_s3_access_policy"
+    role = aws_iam_role.databricks_s3_role.id
+    # Policy to allow Databricks to read from and write to S3 bucket
+
+    policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+            {
+                Action = [
+                    "s3:GetObject",
+                    "s3:ListBucket"
+                ]
+                Effect   = "Allow"
+                Resource = [
+                    "${aws_s3_bucket.target_bucket.arn}",
+                    "${aws_s3_bucket.target_bucket.arn}/*"
+                ]
+            },
+            {
+                Action = [
+                    "s3:PutObject",
+                    "s3:GetObject",
+                    "s3:DeleteObject",
+                    "s3:PutObjectAcl"
+                ]
+                Effect   = "Allow"
+                Resource = "${aws_s3_bucket.target_bucket.arn}/*"
+            }
+        ]
+    })
+  
+}
+
+resource "aws_iam_role" "databricks_s3_role" {
+  name = "databricks-s3-access-role"
+
+  # This allows EC2 instances (Databricks clusters) to assume this role
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "databricks_passrole_policy" {
+  name        = "databricks-passrole-policy"
+  description = "Allows Databricks cross-account role to pass the databricks-s3-access-role"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = aws_iam_role.databricks_s3_role.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "databricks_instance_profile" {
+  name = "databricks-s3-instance-profile"
+  role = aws_iam_role.databricks_s3_role.name
+}
+
+output "instance_profile_arn" {
+  value = aws_iam_instance_profile.databricks_instance_profile.arn
+}
+
+output "passrole_policy_arn" {
+  value = aws_iam_policy.databricks_passrole_policy.arn
+}
+
 ##################################
 #        Lambda Layer            #
 ##################################
