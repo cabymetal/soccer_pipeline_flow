@@ -19,6 +19,9 @@ variables:
     description: The catalog to use
   schema:
     description: The schema to use
+  source_path:
+    description: The source path for data files
+    default: "s3://cmurillo-target-bucket/databricks_pipeline/soccer_api_consumer/"
 
 targets:
   dev:

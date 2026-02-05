@@ -1,0 +1,14 @@
+resources:
+  pipelines:
+    soccer_ingestion_pipeline:
+      name: soccer_ingestion_pipeline
+      configuration:
+        source_path: ${var.source_path}
+      libraries:
+        - notebook:
+            path: ../src/team_ingestion.ipynb
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      clusters:
+        - label: default
+          num_workers: 1

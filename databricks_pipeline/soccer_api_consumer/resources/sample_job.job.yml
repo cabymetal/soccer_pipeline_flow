@@ -21,13 +21,25 @@ resources:
         - name: schema
           default: ${var.schema}
 
+      job_clusters:
+        - job_cluster_key: dev_cluster
+          new_cluster:
+            spark_version: 13.3.x-scala2.12
+            node_type_id: Standard_DS3_v2
+            num_workers: 1
+
       tasks:
+        - task_key: start
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.soccer_ingestion_pipeline.id}
         - task_key: notebook_task
+          job_cluster_key: dev_cluster
           notebook_task:
             notebook_path: ../src/sample_notebook.ipynb
         - task_key: python_wheel_task
           depends_on:
             - task_key: notebook_task
+          job_cluster_key: dev_cluster
           python_wheel_task:
             package_name: soccer_api_consumer
             entry_point: main
