@@ -18,6 +18,12 @@ api_consumer/
 │   └── definitions/                 # Step Function JSON templates
 │       └── soccer_workflow.json.tpl # Soccer workflow definition
 │
+├── databricks_pipeline/
+│   └── soccer_api_consumer/     # Databricks Asset Bundle
+│       ├── databricks.yml       # Bundle configuration
+│       ├── resources/           # Job and Pipeline definitions
+│       └── src/                 # Bundle source code
+│
 └── src/
     ├── lambda_handler.py            # Lambda entry point
     ├── api_factory.py               # Factory pattern for API clients
