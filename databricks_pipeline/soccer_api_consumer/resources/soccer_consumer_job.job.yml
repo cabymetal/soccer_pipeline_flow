@@ -3,7 +3,7 @@
 resources:
   jobs:
     sample_job:
-      name: sample_job
+      name: soccer_api_consumer_job
 
       trigger:
         # Run this job every day, exactly one day from the last run; see https://docs.databricks.com/api/workspace/jobs/create#trigger
@@ -20,26 +20,16 @@ resources:
           default: ${var.catalog}
         - name: schema
           default: ${var.schema}
-
-      job_clusters:
-        - job_cluster_key: dev_cluster
-          new_cluster:
-            spark_version: 13.3.x-scala2.12
-            node_type_id: Standard_DS3_v2
-            num_workers: 1
+        - name: source_path
+          default: ${var.source_path}
 
       tasks:
-        - task_key: start
-          pipeline_task:
-            pipeline_id: ${resources.pipelines.soccer_ingestion_pipeline.id}
-        - task_key: notebook_task
-          job_cluster_key: dev_cluster
+        - task_key: team_ingestion
           notebook_task:
-            notebook_path: ../src/sample_notebook.ipynb
-        - task_key: python_wheel_task
+            notebook_path: ../src/team_ingestion.ipynb
+        - task_key: playerwhl_task
           depends_on:
-            - task_key: notebook_task
-          job_cluster_key: dev_cluster
+            - task_key: team_ingestion
           python_wheel_task:
             package_name: soccer_api_consumer
             entry_point: main
@@ -48,12 +38,14 @@ resources:
               - "${var.catalog}"
               - "--schema"
               - "${var.schema}"
+              - "--source_path"
+              - "${var.source_path}"
           environment_key: default
-        - task_key: refresh_pipeline
+        - task_key: silver_layer_task
+          notebook_task:
+            notebook_path: ../src/silver_layer_transformations.ipynb
           depends_on:
-            - task_key: notebook_task
-          pipeline_task:
-            pipeline_id: ${resources.pipelines.soccer_api_consumer_etl.id}
+            - task_key: playerwhl_task
 
       environments:
         - environment_key: default

@@ -21,7 +21,11 @@ variables:
     description: The schema to use
   source_path:
     description: The source path for data files
-    default: "s3://cmurillo-target-bucket/databricks_pipeline/soccer_api_consumer/"
+    default: "s3://cmurillo-target-bucket"
+  cluster_id:
+    description: The ID of the existing cluster to run jobs on
+  instance_profile_arn:
+    description: The AWS Instance Profile ARN to use for the pipeline clusters
 
 targets:
   dev:
@@ -36,6 +40,8 @@ targets:
     variables:
       catalog: soccer
       schema: ${workspace.current_user.short_name}
+      cluster_id: "0204-223213-x0ko9ixc" # <--- REPLACE THIS WITH YOUR ACTUAL CLUSTER ID
+      instance_profile_arn: "arn:aws:iam::500246988615:instance-profile/databricks-s3-instance-profile" # <--- REPLACE WITH YOUR AWS ACCOUNT ID
   prod:
     mode: production
     workspace:
