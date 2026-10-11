@@ -1,6 +1,7 @@
 """
 Render data rows as Telegram HTML messages. Tables go inside <pre> so columns align.
 """
+from datetime import datetime
 from html import escape
 
 from soccer_bot.leagues import LEAGUES, league_label
@@ -215,23 +216,115 @@ def format_leagues() -> str:
     return "🌍 <b>Ligas disponibles</b>\n\n" + "\n".join(lines)
 
 
-def format_quota(remaining: int, max_questions: int, resets_at, tz) -> str:
-    text = f"🎟️ Te quedan <b>{remaining} de {max_questions}</b> preguntas libres."
-    if resets_at and remaining < max_questions:
-        text += f" Se libera una el {resets_at.astimezone(tz):%d/%m a las %H:%M}."
+def money(value: int, currency: str = "COP") -> str:
+    return f"${value:,.0f}".replace(",", ".") + f" {currency}"
+
+
+def format_date(value, tz) -> str:
+    return f"{value.astimezone(tz):%d/%m/%Y %H:%M}"
+
+
+def format_plans(catalog, founder_left: int) -> str:
+    out = ["💎 <b>Planes</b>\n",
+           "🆓 <b>Gratis</b>",
+           "• /forma, /ranking, /equipos ilimitados",
+           f"• {catalog.welcome_questions} preguntas libres de bienvenida + "
+           f"{catalog.weekly_questions} por semana\n"]
+    for plan in catalog.plans.values():
+        out.append(f"⭐ <b>{escape(plan.name)}</b> · {money(plan.price, catalog.currency)} / {plan.days} días")
+        out += [f"• {escape(f)}" for f in plan.features]
+        out.append("")
+    offer = catalog.founder_offer
+    if offer and founder_left > 0:
+        plan = catalog.plan(offer.plan)
+        out.append(f"🚀 <b>Socio fundador</b>: {escape(plan.name)} a {money(offer.price, catalog.currency)} "
+                   f"mientras mantengas la suscripción. Quedan {founder_left} cupos.\n")
+    for pack in catalog.packs.values():
+        out.append(f"🔋 <b>{escape(pack.name)}</b> · {money(pack.price, catalog.currency)} (no vence)")
+    out.append("\n🔜 = en desarrollo, incluido sin costo extra cuando esté listo.")
+    return "\n".join(out)
+
+
+def format_account(info: dict, catalog, tz) -> str:
+    out = ["👤 <b>Mi cuenta</b>\n"]
+    sub = info["subscription"]
+    if sub:
+        plan = catalog.plan(sub["plan"])
+        name = plan.name if plan else sub["plan"]
+        out.append(f"Plan: <b>{escape(name)}</b>{' (fundador)' if sub['founder'] else ''}")
+        out.append(f"Vigente hasta: {format_date(info['ends_at'], tz)}")
+        out.append(f"Preguntas del periodo: {info['plan_remaining']} de {info['plan_questions']}")
+        if info.get("daily_cap"):
+            out.append(f"Hoy: {info['daily_used']} de {info['daily_cap']}")
+    else:
+        out.append("Plan: <b>Gratis</b>")
+        out.append(f"Preguntas de bienvenida: {info['welcome_left']} de {catalog.welcome_questions}")
+        weekly = f"Pregunta semanal: {info['weekly_left']} de {catalog.weekly_questions}"
+        if info["weekly_left"] == 0 and info["weekly_next_at"]:
+            weekly += f" (se libera el {format_date(info['weekly_next_at'], tz)})"
+        out.append(weekly)
+    if info["pack_balance"]:
+        out.append(f"Recargas: {info['pack_balance']} preguntas")
+    out.append("\nMejora tu plan: /planes")
+    return "\n".join(out)
+
+
+def format_question_footer(info: dict, catalog) -> str:
+    if info["subscription"]:
+        text = f"🎟️ Te quedan {info['plan_remaining']} preguntas del plan"
+    else:
+        text = f"🎟️ Te quedan {info['welcome_left'] + info['weekly_left']} preguntas gratis"
+    if info["pack_balance"]:
+        text += f" + {info['pack_balance']} de recarga"
+    return text + ". Detalle: /micuenta"
+
+
+def format_denied(reason: str, retry_at, tz, catalog) -> str:
+    when = f" el {format_date(retry_at, tz)}" if retry_at else ""
+    if reason == "daily_cap":
+        return f"⏳ Llegaste al máximo diario de preguntas. Se libera una{when}."
+    if reason == "plan_exhausted":
+        return (f"⏳ Usaste todas las preguntas de tu plan (se renuevan{when}).\n\n"
+                "🔋 Compra una recarga o sube de plan en /planes. Los comandos siguen ilimitados.")
+    text = f"⏳ Ya usaste tus preguntas gratis. Tendrás una nueva{when}."
+    cheapest = min(catalog.plans.values(), key=lambda p: p.price, default=None)
+    if cheapest:
+        text += (f"\n\n💎 Con <b>{escape(cheapest.name)}</b> ({money(cheapest.price, catalog.currency)}) tienes "
+                 f"{cheapest.monthly_questions} preguntas al mes y todos los comandos. Mira /planes")
     return text
 
 
-def format_usage(stats: dict) -> str:
+def format_locked(command: str, plan) -> str:
+    plan_name = escape(plan.name) if plan else "un plan pago"
+    return f"🔒 /{escape(command)} es parte del plan <b>{plan_name}</b>. Mira /planes para activarlo."
+
+
+def format_usage(stats: dict, catalog) -> str:
+    plans = ", ".join(f"{k}: {v}" for k, v in stats["active_by_plan"].items()) or "ninguno"
     return (
-        f"📊 <b>Uso de Claude</b> · últimos {stats['days']} días\n<pre>"
-        f"Preguntas      {stats['questions']}\n"
-        f"Usuarios       {stats['users']}\n"
-        f"Tokens entrada {stats['input_tokens']:,}\n"
-        f"Tokens salida  {stats['output_tokens']:,}\n"
-        f"Costo estimado ${stats['cost_usd']:.2f} USD"
+        f"📊 <b>Métricas</b> · últimos {stats['days']} días\n<pre>"
+        f"Usuarios totales   {stats['users']}\n"
+        f"Suscriptores       {plans}\n"
+        f"Fundadores         {stats['founders']}\n"
+        f"MRR                {money(stats['mrr'], catalog.currency)}\n"
+        f"Ingresos periodo   {money(stats['revenue'], catalog.currency)}\n"
+        f"Preguntas          {stats['questions']} ({stats['askers']} usuarios)\n"
+        f"Tokens in/out      {stats['input_tokens']:,} / {stats['output_tokens']:,}\n"
+        f"Costo Claude       ${stats['cost_usd']:.2f} USD"
         "</pre>"
     )
+
+
+def format_subscribers(rows: list[dict], catalog, tz) -> str:
+    if not rows:
+        return "No hay suscriptores activos."
+    out = [f"👥 <b>Suscriptores activos</b> ({len(rows)})\n"]
+    for r in rows:
+        who = f"@{r['username']}" if r.get("username") else escape(r.get("first_name") or "")
+        founder = " 🚀" if r["founder"] else ""
+        out.append(f"• <code>{r['chat_id']}</code> {escape(who)} · {r['plan']}{founder} · "
+                   f"vence {format_date(datetime.fromisoformat(r['ends_at']), tz)}")
+    return "\n".join(out)
 
 
 def format_suggestions(data: dict) -> str:
@@ -256,18 +349,20 @@ HELP = """🤖 <b>Soccer Stats Bot</b>
   Victorias, goles y forma reciente
   <code>/forma Barcelona visitante</code>
 
-<b>/comparar</b> &lt;equipo&gt; vs &lt;equipo&gt; [local|visitante]
+<b>/comparar</b> &lt;equipo&gt; vs &lt;equipo&gt; [local|visitante] 💎
   <code>/comparar Arsenal vs Chelsea</code>
 
 <b>/ranking</b> &lt;liga&gt;
   <code>/ranking premier</code>
 
-<b>/tarjetas</b> &lt;equipo&gt;
+<b>/tarjetas</b> &lt;equipo&gt; 💎
   Probabilidad de amarillas y rojas
   <code>/tarjetas Sevilla</code>
 
-<b>/equipos</b> &lt;liga&gt; · <b>/ligas</b> · <b>/cupo</b> · <b>/ayuda</b>
+<b>/equipos</b> &lt;liga&gt; · <b>/ligas</b> · <b>/ayuda</b>
 
-💬 También puedes escribir tu pregunta normal, p. ej. "¿cómo le va al Barça de visitante?". Las preguntas libres son limitadas (ver /cupo); los comandos son ilimitados.
+💎 <b>/planes</b> · 👤 <b>/micuenta</b>
+
+💬 También puedes escribir tu pregunta normal, p. ej. "¿cómo le va al Barça de visitante?". Las preguntas libres son limitadas según tu plan (ver /micuenta).
 
 ℹ️ Las estadísticas son por temporada. "Últimos N partidos" con goles y local/visitante llegará con la tabla de partidos (fixtures)."""

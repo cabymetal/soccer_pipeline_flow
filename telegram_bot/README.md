@@ -59,14 +59,39 @@ fixed commands** and its parameters. The reply always comes from the fixed comma
 data source); Claude's own text is never shown.
 
 - Off by default: `NL_ENABLED=true` + `ANTHROPIC_API_KEY` (Claude Console API key, billed per use).
-- Quota: `NL_MAX_QUESTIONS` per user per rolling `NL_WINDOW_HOURS` (default 3 / 72h).
-  Fixed commands are unlimited. Admins (`ADMIN_CHAT_IDS`) are exempt. Failed calls are refunded.
+- Questions are charged to the user's plan (see below). Admins (`ADMIN_CHAT_IDS`) are exempt.
+  Failed calls are refunded.
 - Guardrails: single turn (no history), `NL_MAX_CHARS` input cap, strict tool schemas, off-topic
   questions get a fixed reply, refusals use server-side fallbacks (`fallbacks: "default"`).
 - Every question is logged in a local SQLite file (`USAGE_DB_PATH`). Admin commands:
   - `/sugerencias`: what users ask that no command covers yet (backlog for new fixed commands).
-  - `/uso`: questions, tokens and estimated cost over the last 30 days.
+  - `/uso`: subscribers, MRR, revenue, questions, tokens and Claude cost (last 30 days).
 - Each answer shows the equivalent free command, so users learn to skip the LLM.
+
+## Plans and billing
+
+Prices, quotas, gated commands and plan features live in [plans.json](plans.json).
+
+| Tier | Price (COP) | Commands | Free-text questions |
+|---|---|---|---|
+| Free | 0 | /forma, /ranking, /equipos | 3 welcome + 1 per week |
+| Pro | 14.900 / 30 days | all | 50 per period |
+| VIP | 29.900 / 30 days | all | 200 per period, max 15/day |
+| Founder offer | Pro at 9.900, first 50 users | all | as Pro |
+| Pack | 4.900 | — | +15, no expiry |
+
+Questions are charged in this order: plan allowance, then packs, then the free allowance.
+
+User commands: `/planes` (with buy buttons), `/micuenta`.
+
+Payments are **manual** for now: the buy button sends the user `PAYMENT_INSTRUCTIONS` and notifies
+admins with the exact activation command. Admin commands:
+
+- `/activar <chat_id> <plan> [periods] [fundador]` (renewals stack after the current period)
+- `/recargar <chat_id> <pack>`, `/desactivar <chat_id>`, `/suscriptores`
+
+Subscribers get a renewal reminder `reminder_days_before` days before expiry.
+All state lives in the local SQLite file `DB_PATH` (back it up).
 
 ## Add a league
 

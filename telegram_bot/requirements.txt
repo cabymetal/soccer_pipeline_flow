@@ -1,4 +1,4 @@
-python-telegram-bot>=21,<23
+python-telegram-bot[job-queue]>=21,<23
 python-dotenv>=1.0
 databricks-sql-connector>=3.0
 databricks-sdk>=0.30

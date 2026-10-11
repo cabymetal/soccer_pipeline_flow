@@ -9,6 +9,7 @@ Guardrails:
   so the model can only reach teams that exist in the data.
 """
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from html import escape
 
@@ -95,8 +96,8 @@ UNSUPPORTED_REPLY = (
 
 @dataclass
 class RouteResult:
-    reply: str                       # HTML ready for Telegram
-    status: str                      # answered | unsupported | error
+    reply: str                       # HTML ready for Telegram ("" when locked: caller renders the upsell)
+    status: str                      # answered | unsupported | locked | error
     tool: str | None = None
     params: dict = field(default_factory=dict)
     category: str | None = None
@@ -126,7 +127,8 @@ def _command_args(tool: str, p: dict) -> list[str]:
     return [p["equipo"], *sede]
 
 
-def execute_tool(source, tool: str, params: dict) -> RouteResult:
+def execute_tool(source, tool: str, params: dict,
+                 can_use: Callable[[str], bool] | None = None) -> RouteResult:
     """Run the fixed command the model picked. Pure data path: no model text involved."""
     if tool == "no_soportada":
         category = params.get("categoria")
@@ -136,6 +138,9 @@ def execute_tool(source, tool: str, params: dict) -> RouteResult:
     command = commands.COMMANDS.get(tool)
     if command is None or tool not in {t["name"] for t in TOOLS}:
         return RouteResult(OUT_OF_SCOPE_REPLY, "unsupported", tool, params, "fuera_de_tema")
+
+    if can_use is not None and not can_use(tool):
+        return RouteResult("", "locked", tool, params)
 
     try:
         reply = command(source, _command_args(tool, params))
@@ -161,7 +166,7 @@ class NLRouter:
         self._client = client or anthropic.Anthropic()
         self._model = model
 
-    def route(self, question: str) -> RouteResult:
+    def route(self, question: str, can_use: Callable[[str], bool] | None = None) -> RouteResult:
         response = self._client.beta.messages.create(
             model=self._model,
             max_tokens=4000,
@@ -184,6 +189,6 @@ class NLRouter:
             logger.warning("No tool call for question; stop_reason=%s", response.stop_reason)
             return RouteResult(OUT_OF_SCOPE_REPLY, "unsupported", category="fuera_de_tema", **tokens)
 
-        result = execute_tool(self._source, tool_use.name, dict(tool_use.input))
+        result = execute_tool(self._source, tool_use.name, dict(tool_use.input), can_use)
         result.input_tokens, result.output_tokens = tokens["input_tokens"], tokens["output_tokens"]
         return result

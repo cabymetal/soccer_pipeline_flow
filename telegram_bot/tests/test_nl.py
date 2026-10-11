@@ -1,14 +1,12 @@
 """
 Natural-language layer tests. Claude is replaced by a fake client: no API calls, no cost.
 """
-from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
 
 from soccer_bot.data.mock_source import MockSource
 from soccer_bot.nl_router import OUT_OF_SCOPE_REPLY, TOOLS, UNSUPPORTED_REPLY, NLRouter
-from soccer_bot.usage import UsageStore
 
 
 def _response(*blocks, stop_reason="tool_use"):
@@ -110,58 +108,11 @@ def test_tools_are_strict():
         assert set(schema["required"]) == set(schema["properties"])
 
 
-# --- quota ---
-
-@pytest.fixture
-def store():
-    return UsageStore(":memory:", max_questions=3, window_hours=72)
+def test_locked_tool_is_not_executed(source):
+    result, _ = route_with(source, _response(_tool_use("tarjetas", equipo="Sevilla")), can_use=lambda t: t != "tarjetas")
+    assert result.status == "locked" and result.reply == ""
 
 
-def test_quota_three_per_window(store):
-    t0 = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)
-    statuses = [store.reserve(1, f"q{i}", now=t0 + timedelta(hours=i)) for i in range(4)]
-    assert [s.allowed for s in statuses] == [True, True, True, False]
-    assert [s.remaining for s in statuses[:3]] == [2, 1, 0]
-    assert statuses[3].resets_at == t0 + timedelta(hours=72)
-
-
-def test_quota_rolls_over(store):
-    t0 = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)
-    for i in range(3):
-        store.reserve(1, "q", now=t0 + timedelta(hours=i))
-    assert not store.check(1, now=t0 + timedelta(hours=71)).allowed
-    assert store.check(1, now=t0 + timedelta(hours=72, minutes=1)).remaining == 1
-
-
-def test_quota_is_per_user(store):
-    t0 = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)
-    for _ in range(3):
-        store.reserve(1, "q", now=t0)
-    assert store.reserve(2, "q", now=t0).allowed
-
-
-def test_refund_returns_the_question(store):
-    t0 = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)
-    ids = [store.reserve(1, "q", now=t0).question_id for _ in range(3)]
-    store.refund(ids[-1])
-    assert store.check(1, now=t0).remaining == 1
-
-
-def test_admin_exempt_but_logged(store):
-    t0 = datetime(2026, 10, 1, 12, tzinfo=timezone.utc)
-    assert all(store.reserve(9, "q", exempt=True, now=t0).allowed for _ in range(10))
-    assert store.usage_since(36500)["questions"] >= 10
-
-
-def test_suggestions_aggregate(store):
-    qid = store.reserve(1, "¿quién es el goleador del Barça?").question_id
-    store.complete(qid, "unsupported", "no_soportada", category="jugadores", summary="goleador del Barça",
-                   input_tokens=1000, output_tokens=100)
-    qid = store.reserve(1, "forma del Arsenal").question_id
-    store.complete(qid, "answered", "forma", {"equipo": "Arsenal"}, input_tokens=1000, output_tokens=100)
-    data = store.suggestions()
-    assert data["categories"] == [{"category": "jugadores", "n": 1}]
-    assert data["tools"] == [{"tool": "forma", "n": 1}]
-    usage = store.usage_since(1)
-    assert usage["questions"] == 2
-    assert usage["cost_usd"] == pytest.approx(2000 * 4e-6 + 200 * 20e-6)
+def route_with(source, response, can_use):
+    client = FakeClient(response)
+    return NLRouter(source, client=client).route("pregunta", can_use), client

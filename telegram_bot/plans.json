@@ -1,0 +1,45 @@
+{
+  "currency": "COP",
+  "free": {
+    "welcome_questions": 3,
+    "weekly_questions": 1,
+    "commands": ["forma", "ranking", "equipos", "ligas", "ayuda", "start", "help"]
+  },
+  "plans": [
+    {
+      "id": "pro",
+      "name": "Pro",
+      "price": 14900,
+      "days": 30,
+      "monthly_questions": 50,
+      "daily_cap": null,
+      "commands": "all",
+      "features": [
+        "Todos los comandos: /comparar y /tarjetas (probabilidades)",
+        "50 preguntas libres al mes",
+        "🔜 Últimos N partidos, enfrentamientos directos, over/under",
+        "🔜 Previa automática de los partidos del día (1 liga)"
+      ]
+    },
+    {
+      "id": "vip",
+      "name": "VIP",
+      "price": 29900,
+      "days": 30,
+      "monthly_questions": 200,
+      "daily_cap": 15,
+      "commands": "all",
+      "features": [
+        "Todo lo de Pro",
+        "200 preguntas libres al mes (máx. 15 al día)",
+        "🔜 Previa automática de las 3 ligas",
+        "🔜 Alertas: rachas y riesgo alto de tarjetas"
+      ]
+    }
+  ],
+  "packs": [
+    {"id": "recarga15", "name": "Recarga 15 preguntas", "price": 4900, "questions": 15}
+  ],
+  "founder_offer": {"plan": "pro", "price": 9900, "slots": 50},
+  "reminder_days_before": 3
+}

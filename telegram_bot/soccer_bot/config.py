@@ -22,10 +22,10 @@ class Settings:
     access_mode: str  # "allowlist" | "public"
     admin_chat_ids: frozenset[int]
     nl_enabled: bool
-    nl_max_questions: int
-    nl_window_hours: int
     nl_max_chars: int
-    usage_db_path: str
+    db_path: str
+    plans_path: str | None
+    payment_instructions: str
 
 
 def _parse_chat_ids(raw: str) -> frozenset[int]:
@@ -61,8 +61,10 @@ def load_settings() -> Settings:
         access_mode=access_mode,
         admin_chat_ids=_parse_chat_ids(os.getenv("ADMIN_CHAT_IDS", "")),
         nl_enabled=os.getenv("NL_ENABLED", "false").lower() == "true",
-        nl_max_questions=int(os.getenv("NL_MAX_QUESTIONS", "3")),
-        nl_window_hours=int(os.getenv("NL_WINDOW_HOURS", "72")),
         nl_max_chars=int(os.getenv("NL_MAX_CHARS", "300")),
-        usage_db_path=os.getenv("USAGE_DB_PATH", "usage.sqlite3"),
+        db_path=os.getenv("DB_PATH", "bot.sqlite3"),
+        plans_path=os.getenv("PLANS_PATH"),
+        payment_instructions=os.getenv(
+            "PAYMENT_INSTRUCTIONS", "Un administrador te escribirá para completar el pago."
+        ).replace("\\n", "\n"),
     )
