@@ -63,7 +63,7 @@ data source); Claude's own text is never shown.
   Failed calls are refunded.
 - Guardrails: single turn (no history), `NL_MAX_CHARS` input cap, strict tool schemas, off-topic
   questions get a fixed reply, refusals use server-side fallbacks (`fallbacks: "default"`).
-- Every question is logged in a local SQLite file (`USAGE_DB_PATH`). Admin commands:
+- Every question is logged in a local SQLite file (`DB_PATH`). Admin commands:
   - `/sugerencias`: what users ask that no command covers yet (backlog for new fixed commands).
   - `/uso`: subscribers, MRR, revenue, questions, tokens and Claude cost (last 30 days).
 - Each answer shows the equivalent free command, so users learn to skip the LLM.
