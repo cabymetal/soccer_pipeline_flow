@@ -20,3 +20,6 @@ scratch/**
 !scratch/README.md
 **/explorations/**
 **/!explorations/README.md
+
+# telegram bot local usage db
+*.sqlite3

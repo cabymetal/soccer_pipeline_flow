@@ -215,6 +215,41 @@ def format_leagues() -> str:
     return "🌍 <b>Ligas disponibles</b>\n\n" + "\n".join(lines)
 
 
+def format_quota(remaining: int, max_questions: int, resets_at, tz) -> str:
+    text = f"🎟️ Te quedan <b>{remaining} de {max_questions}</b> preguntas libres."
+    if resets_at and remaining < max_questions:
+        text += f" Se libera una el {resets_at.astimezone(tz):%d/%m a las %H:%M}."
+    return text
+
+
+def format_usage(stats: dict) -> str:
+    return (
+        f"📊 <b>Uso de Claude</b> · últimos {stats['days']} días\n<pre>"
+        f"Preguntas      {stats['questions']}\n"
+        f"Usuarios       {stats['users']}\n"
+        f"Tokens entrada {stats['input_tokens']:,}\n"
+        f"Tokens salida  {stats['output_tokens']:,}\n"
+        f"Costo estimado ${stats['cost_usd']:.2f} USD"
+        "</pre>"
+    )
+
+
+def format_suggestions(data: dict) -> str:
+    out = ["🧠 <b>Backlog de comandos</b> (de las preguntas en lenguaje natural)"]
+    if data["categories"]:
+        out.append("\n<b>Lo que piden y aún no tenemos</b>")
+        out += [f"• {escape(r['category'])}: {r['n']}" for r in data["categories"]]
+    if data["tools"]:
+        out.append("\n<b>Comandos más pedidos en lenguaje natural</b>")
+        out += [f"• /{escape(r['tool'])}: {r['n']}" for r in data["tools"]]
+    if data["recent"]:
+        out.append("\n<b>Ejemplos recientes</b>")
+        out += [f"• [{escape(r['category'])}] {escape(r['summary'] or r['question'][:80])}" for r in data["recent"]]
+    if len(out) == 1:
+        out.append("\nAún no hay preguntas registradas.")
+    return "\n".join(out)
+
+
 HELP = """🤖 <b>Soccer Stats Bot</b>
 
 <b>/forma</b> &lt;equipo&gt; [local|visitante]
@@ -231,6 +266,8 @@ HELP = """🤖 <b>Soccer Stats Bot</b>
   Probabilidad de amarillas y rojas
   <code>/tarjetas Sevilla</code>
 
-<b>/equipos</b> &lt;liga&gt; · <b>/ligas</b> · <b>/ayuda</b>
+<b>/equipos</b> &lt;liga&gt; · <b>/ligas</b> · <b>/cupo</b> · <b>/ayuda</b>
+
+💬 También puedes escribir tu pregunta normal, p. ej. "¿cómo le va al Barça de visitante?". Las preguntas libres son limitadas (ver /cupo); los comandos son ilimitados.
 
 ℹ️ Las estadísticas son por temporada. "Últimos N partidos" con goles y local/visitante llegará con la tabla de partidos (fixtures)."""

@@ -19,6 +19,13 @@ class Settings:
     databricks_http_path: str | None
     databricks_token: str | None
     cache_ttl_seconds: int
+    access_mode: str  # "allowlist" | "public"
+    admin_chat_ids: frozenset[int]
+    nl_enabled: bool
+    nl_max_questions: int
+    nl_window_hours: int
+    nl_max_chars: int
+    usage_db_path: str
 
 
 def _parse_chat_ids(raw: str) -> frozenset[int]:
@@ -37,6 +44,10 @@ def load_settings() -> Settings:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", catalog):
         raise ValueError(f"Invalid catalog name: {catalog}")
 
+    access_mode = os.getenv("ACCESS_MODE", "allowlist").lower()
+    if access_mode not in ("allowlist", "public"):
+        raise ValueError(f"ACCESS_MODE must be 'allowlist' or 'public', got: {access_mode}")
+
     return Settings(
         telegram_token=os.environ["TELEGRAM_BOT_TOKEN"],
         allowed_chat_ids=_parse_chat_ids(os.getenv("ALLOWED_CHAT_IDS", "")),
@@ -47,4 +58,11 @@ def load_settings() -> Settings:
         databricks_http_path=os.getenv("DATABRICKS_HTTP_PATH"),
         databricks_token=os.getenv("DATABRICKS_TOKEN"),
         cache_ttl_seconds=int(os.getenv("CACHE_TTL_SECONDS", "3600")),
+        access_mode=access_mode,
+        admin_chat_ids=_parse_chat_ids(os.getenv("ADMIN_CHAT_IDS", "")),
+        nl_enabled=os.getenv("NL_ENABLED", "false").lower() == "true",
+        nl_max_questions=int(os.getenv("NL_MAX_QUESTIONS", "3")),
+        nl_window_hours=int(os.getenv("NL_WINDOW_HOURS", "72")),
+        nl_max_chars=int(os.getenv("NL_MAX_CHARS", "300")),
+        usage_db_path=os.getenv("USAGE_DB_PATH", "usage.sqlite3"),
     )

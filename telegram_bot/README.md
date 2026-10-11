@@ -52,6 +52,22 @@ Requires `SELECT` on `soccer.silver` and `soccer.gold`, and a CLI profile
 Each query wakes the SQL Warehouse if stopped (billed). Results are cached in memory for
 `CACHE_TTL_SECONDS` (default 1h) since data is refreshed daily.
 
+## Natural-language questions (Claude)
+
+Any non-command message is sent to Claude (`claude-opus-5-5`), which **only picks one of the
+fixed commands** and its parameters. The reply always comes from the fixed command (i.e. from the
+data source); Claude's own text is never shown.
+
+- Off by default: `NL_ENABLED=true` + `ANTHROPIC_API_KEY` (Claude Console API key, billed per use).
+- Quota: `NL_MAX_QUESTIONS` per user per rolling `NL_WINDOW_HOURS` (default 3 / 72h).
+  Fixed commands are unlimited. Admins (`ADMIN_CHAT_IDS`) are exempt. Failed calls are refunded.
+- Guardrails: single turn (no history), `NL_MAX_CHARS` input cap, strict tool schemas, off-topic
+  questions get a fixed reply, refusals use server-side fallbacks (`fallbacks: "default"`).
+- Every question is logged in a local SQLite file (`USAGE_DB_PATH`). Admin commands:
+  - `/sugerencias`: what users ask that no command covers yet (backlog for new fixed commands).
+  - `/uso`: questions, tokens and estimated cost over the last 30 days.
+- Each answer shows the equivalent free command, so users learn to skip the LLM.
+
 ## Add a league
 
 Add an entry to `LEAGUES` in [soccer_bot/leagues.py](soccer_bot/leagues.py) (API-Football league id)
