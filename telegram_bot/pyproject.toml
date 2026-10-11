@@ -1,0 +1,9 @@
+[project]
+name = "soccer-bot"
+version = "0.1.0"
+description = "Telegram bot that answers soccer stats questions from the Databricks soccer catalog"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
