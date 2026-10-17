@@ -8,7 +8,7 @@ The application is designed to be scalable, maintainable, and easy to deploy acr
 
 ## Project Structure
 
-```
+```markdown
 api_consumer/
 ├── infra/
 │   ├── main.tf                      # Main Terraform configuration
@@ -48,12 +48,14 @@ api_consumer/
 ## Prerequisites
 
 ### Local Development
+
 - Python 3.12+
 - Terraform 1.0+
 - AWS CLI configured with appropriate credentials
 - Git
 
 ### AWS Account
+
 - Active AWS account with appropriate permissions
 - S3 bucket access
 - Lambda execution capabilities
@@ -72,11 +74,14 @@ cd api_consumer
 ### 2. Install Python Dependencies
 
 ```bash
+
 pip install -r requirements.txt  # if you have a requirements.txt file
 ```
 
 Or install individual packages as needed:
+
 ```bash
+
 pip install boto3
 ```
 
@@ -87,6 +92,7 @@ aws configure
 ```
 
 Or set environment variables:
+
 ```bash
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
@@ -104,6 +110,7 @@ setup_array_tuple    = ["league1", "league2", "season2024"]
 ```
 
 **Required Variables:**
+
 - `aws_region`: AWS region for deployment
 - `api_soccer_api_key`: API key for soccer data service
 - `setup_array_tuple`: Array of leagues and seasons to process
@@ -122,6 +129,7 @@ terraform apply
 ### Lambda Functions
 
 The Lambda function (`lambda_handler.py`) serves as the entry point for the serverless application. It:
+
 - Receives events from Step Functions
 - Instantiates appropriate API clients using the factory pattern
 - Processes API responses
@@ -130,20 +138,24 @@ The Lambda function (`lambda_handler.py`) serves as the entry point for the serv
 ### API Clients
 
 **Base Client (`API.py`)**
+
 - Abstract base class for all API consumers
 - Defines common interface for API interactions
 
 **Soccer Consumer (`soccer_consumer.py`)**
+
 - Implements soccer/football data API consumption
 - Fetches league and match information
 
 **Spotify Consumer (`spotify_consumer.py`)**
+
 - Implements Spotify API data consumption
 - Fetches music and artist information
 
 ### Step Functions Workflow
 
 The workflow (`definitions/soccer_workflow.json.tpl`) orchestrates:
+
 - Lambda invocation with configurable parameters
 - Error handling and retries
 - Data transformation between steps
@@ -166,6 +178,7 @@ environment {
 ### S3 Storage
 
 Data is stored in the `cmurillo-target-bucket` S3 bucket. Bucket policy:
+
 - Write-only from Lambda
 - Private ACL
 - Force destroy enabled for development
@@ -182,7 +195,7 @@ Data is stored in the `cmurillo-target-bucket` S3 bucket. Bucket policy:
 
 For local development and testing, this project can be deployed to **LocalStack** - a local AWS cloud emulator.
 
-### Prerequisites
+### Prerequisites for localstack
 
 - Docker and Docker Compose installed
 - `docker-compose.yml` configured in the project root
@@ -213,6 +226,7 @@ docker-compose up -d localstack
 ```
 
 Verify it's running:
+
 ```bash
 docker ps | grep localstack
 curl http://localhost:4566/
@@ -223,6 +237,7 @@ curl http://localhost:4566/
 The project uses **Terraform Workspaces** to manage different environments:
 
 #### Test Environment (LocalStack)
+
 ```bash
 terraform workspace new test
 terraform workspace select test
@@ -230,6 +245,7 @@ terraform apply
 ```
 
 Configuration in `locals.tf`:
+
 ```hcl
 test_config = {
     access_key           = "test"
@@ -242,6 +258,7 @@ test_config = {
 ```
 
 #### Production Environment (AWS)
+
 ```bash
 terraform workspace new prod
 terraform workspace select prod
@@ -249,6 +266,7 @@ terraform apply
 ```
 
 Configuration in `locals.tf`:
+
 ```hcl
 prod_config = {
     region               = "us-east-1"
@@ -289,7 +307,7 @@ provider "aws" {
 ### Key LocalStack Configurations
 
 | Setting | Purpose | Value |
-|---------|---------|-------|
+| --------- | --------- | ------- |
 | `s3_use_path_style` | Disables virtual-hosted-style S3 addressing | `true` for LocalStack |
 | `localstack_endpoint` | Routes all AWS API calls to LocalStack | `http://localhost:4566` |
 | `skip_credentials_validation` | Bypasses AWS credential validation | `true` for LocalStack |
@@ -327,24 +345,28 @@ aws stepfunctions start-execution \
 
 ### Troubleshooting LocalStack
 
-**Error: "dial tcp: lookup localstack: no such host"**
+One possible error is: **Error: "dial tcp: lookup localstack: no such host"**
+
 - LocalStack is not running or not accessible
 - Verify with: `docker ps | grep localstack`
 - Check endpoint URL in `locals.tf` is correct
 
-**Error: "couldn't find resource" (Secrets Manager)**
+error: **Error: "couldn't find resource" (Secrets Manager)**
+
 - Secret doesn't exist in LocalStack
 - Secrets Manager is optional - can be commented out in `main.tf`
 
-**Error: "S3 path style addressing"**
+error: **Error: "S3 path style addressing"**
+
 - Ensure `s3_use_path_style = true` is set in provider
 - Required for LocalStack S3 compatibility
 
-**Error: "Step Functions validation failed"**
+error: **Error: "Step Functions validation failed"**
+
 - Ensure `stepfunctions` endpoint is configured in provider
 - Validate JSON template syntax in `soccer_workflow.json.tpl`
 
-## Deployment Workflow
+## Deployment Workflow for LocalStack
 
 1. **Local Development**: Test Lambda code locally with mock events
 2. **Package**: Terraform automatically zips the `src/` directory
@@ -399,14 +421,17 @@ data = consumer.fetch_data("premier_league", 2024)
 ## Troubleshooting
 
 ### Lambda Timeout
+
 - Increase timeout in `main.tf` (`timeout` parameter)
 - Check API response times
 
 ### S3 Permission Denied
+
 - Verify IAM role policy includes S3 bucket ARN
 - Check bucket ACL settings
 
 ### Step Function Failures
+
 - View execution history in AWS Console
 - Check CloudWatch Logs for error details
 - Validate templatefile variables match the template
@@ -437,4 +462,4 @@ not licence at the moment
 
 ## Contact
 
-cabymetal@gmail.com
+email: cabymetal / gmail
