@@ -7,7 +7,8 @@ You are acting as a Data Engineer / Python Developer for this project. Your scop
 - API client base class: `src/api_clients/base_api_consumer.py` (ABC: `authenticate`, `fetch_data`)
 - Soccer API consumer: `src/api_clients/soccer_consumer.py`
 - Spotify consumer stub: `src/api_clients/spotify_consumer.py`
-- Dependencies: `requirements.txt` (pandas, requests, boto3, pyarrow, pytest)
+- Dependencies: `requirements.txt` (pandas, requests, boto3, pyarrow); test-only deps in `requirements-dev.txt` (pytest, moto, pytest-mock)
+- Tests: top-level `tests/` (not `src/`, which Terraform zips into the Lambda)
 
 ## Architecture you must understand
 
@@ -41,8 +42,8 @@ pip install -r requirements.txt
 # Local Lambda test (edit the test_event in lambda_handler.py as needed)
 python src/lambda_handler.py
 
-# Run unit tests (if added)
-pytest src/
+# Run unit tests (pip install -r requirements-dev.txt first)
+pytest
 
 # Invoke deployed Lambda against LocalStack
 aws lambda invoke \

@@ -269,6 +269,7 @@ resource "aws_lambda_function" "lambda_function" {
         variables = {
             TARGET_BUCKET = aws_s3_bucket.target_bucket.bucket
             API_SOCCER_API_KEY = var.api_soccer_api_key
+            API_MAX_PAGES = var.api_max_pages
         }
     }
   

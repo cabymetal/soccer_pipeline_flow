@@ -10,8 +10,8 @@ class base_api_consumer(ABC):
         pass
 
     @abstractmethod
-    def fetch_data(self, endpoint: str) -> dict:
+    def fetch_data(self, endpoint: str, **kwargs) -> dict:
         """
-        Fetch data from the specified API endpoint.
+        Fetch data from the specified API endpoint, passing kwargs as query parameters.
         """
         pass

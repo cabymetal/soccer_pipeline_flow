@@ -9,12 +9,35 @@ import time
 import copy
 from botocore.exceptions import ClientError
 
+logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
+
+REQUEST_TIMEOUT_SECONDS = 30
+
+# boto3 clients are reused across warm Lambda invocations
+_s3_client = None
+
+
+def _get_s3_client():
+    global _s3_client
+    if _s3_client is None:
+        _s3_client = boto3.client('s3')
+    return _s3_client
+
+
+class soccer_api_error(RuntimeError):
+    """Raised when API-Sports returns HTTP 200 with a populated 'errors' field."""
+
+
 class soccer_consumer(base_api_consumer):
     def __init__(self, api_key: str = None):
         self.base_url = "https://v3.football.api-sports.io"
         self.api_key = api_key
         self.bucket_name = os.getenv('TARGET_BUCKET', 'soccer-api-raw-data')
-    
+        # free plan rejects page > 3; unset means no cap
+        max_pages = os.getenv('API_MAX_PAGES')
+        self.max_pages = int(max_pages) if max_pages else None
+
     def authenticate(self, api_key: str) -> None:
         """
         Authenticate the Soccer API client using the provided API key.
@@ -30,83 +53,89 @@ class soccer_consumer(base_api_consumer):
         key_suffix = ""
         for key, value in kwargs.items():
             key_suffix += f"{key}={value}/"
-        
+
         return key_suffix.rstrip('/')
 
-    def _save_raw_response_to_s3(self, response_content, endpoint: str, **kwargs) -> None:
+    def _save_raw_response_to_s3(self, response_content: io.BytesIO | io.StringIO,
+                                 endpoint: str, filename: str, **kwargs) -> None:
         """
         Save the raw API response content to an S3 bucket with Hadoop-style partitioning.
-        Path format: s3://bucket/endpoint/parameters/data.parquet
+        Path format: s3://bucket/endpoint/key=value/.../filename
         """
-        s3_client = boto3.client('s3')
-        
-        #obtain filename extension from buffer type
-        team_id = kwargs.get('team_id', None)
-        if team_id:
-            filename = f'{team_id}.json'
-            kwargs.pop('team_id', None)
+        body = response_content.getvalue()
+        if isinstance(body, str):
             # need to encode string buffer to bytes
-            response_content = response_content.getvalue().encode('utf-8')
-        else:
-            filename = 'data.parquet'
-        
+            body = body.encode('utf-8')
+
         # Generate Hadoop partition path
         partition_path = self._generate_hadoop_partition_path(**kwargs)
-        
+
         # Construct S3 key with Hadoop partitioning
         s3_key = f"{endpoint.replace('/', '_')}/{partition_path}/{filename}"
         try:
-            response = s3_client.put_object( 
+            response = _get_s3_client().put_object(
                 Bucket = self.bucket_name,
                 Key = s3_key,
-                Body = response_content
+                Body = body
             )
 
             if response['ResponseMetadata']['HTTPStatusCode'] != 200:
                 raise Exception(f"Failed to save data to S3: {response}")
-            
-            logging.info(f"Saved raw response to s3://{self.bucket_name}/{s3_key}")
+
+            logger.info("Saved raw response to s3://%s/%s", self.bucket_name, s3_key)
         except ClientError as e:
-            logging.error(f"Error saving to S3: {e}")
+            logger.error("Error saving to S3: %s", e)
             raise e
-        
-    
+
+
     def _make_request(self, endpoint: str, **kwargs) -> dict:
         """
         Make a GET request to the specified Soccer API endpoint.
         """
         url = f"{self.base_url}/{endpoint}"
-        response = requests.get(url, headers=self.headers, params=kwargs)
+        response = requests.get(url, headers=self.headers, params=kwargs,
+                                timeout=REQUEST_TIMEOUT_SECONDS)
         if response.status_code != 200:
             response.raise_for_status()
-        
-        return response.json()
+
+        data = response.json()
+        # API-Sports reports bad keys, rate limits, etc. as HTTP 200 with 'errors' set
+        if data.get('errors'):
+            raise soccer_api_error(f"API error for {endpoint} with parameters {kwargs}: {data['errors']}")
+
+        return data
 
     def _paginate_results(self, endpoint: str, initial_data: dict, **kwargs) -> list:
         """
         Handle pagination logic and return all aggregated data from all pages.
-        
+
         Args:
             endpoint: API endpoint to fetch from
             initial_data: Initial response data from first request
             **kwargs: Query parameters for the request
-            
+
         Returns:
             list: Aggregated response data from all pages
         """
         total_pages = initial_data.get('paging', {}).get('total', 1)
-        all_data = initial_data.get('response', [])
-        endpoint = f'{self.base_url}/{endpoint}'
-        
+        all_data = list(initial_data.get('response', []))
+
+        last_page = total_pages
+        if self.max_pages and total_pages > self.max_pages:
+            last_page = self.max_pages
+            logger.warning("Truncating %s results to %s of %s pages (API_MAX_PAGES) for parameters: %s",
+                           endpoint, last_page, total_pages, kwargs)
+
         # Fetch remaining pages if total_pages > 1
-        for page in range(2, total_pages + 1):
-            kwargs['page'] = page
-            page_data = self._make_request(endpoint=endpoint, **kwargs)
+        for page in range(2, last_page + 1):
+            page_data = self._make_request(endpoint=endpoint, **kwargs, page=page)
             all_data.extend(page_data.get('response', []))
-        
+            if page % 5 == 0:
+                time.sleep(30)  # To respect API rate limits
+
         return all_data
 
-    def get_teams_from_league(self, **kwargs: dict) -> list:
+    def get_teams_from_league(self, **kwargs) -> list:
         """
         Retrieve all teams from a specified league and season.
         Args:
@@ -116,43 +145,39 @@ class soccer_consumer(base_api_consumer):
         """
         endpoint = f"teams"
         data = self._make_request(endpoint=endpoint, **kwargs)
-        total_pages = data.get('paging', {}).get('total', 1)
-        all_data = data.get('response', [])
-        for page in range(2, total_pages + 1):
-            kwargs['page'] = page
-            page_data = self._make_request(endpoint=endpoint, **kwargs)
-            all_data.extend(page_data.get('response', []))
-        logging.info(f"fetch_data completed for endpoint: {endpoint} with parameters: {kwargs}")
-        logging.info(f"Total teams fetched: {len(all_data)}")
-        
-        kwargs.pop('page', None)
+        all_data = self._paginate_results(endpoint, data, **kwargs)
+        logger.info("fetch_data completed for endpoint: %s with parameters: %s", endpoint, kwargs)
+        logger.info("Total teams fetched: %s", len(all_data))
+
         teams_from_league = []
         counter = 1
         for item in all_data:
             team_dict = {'team': item['team']['id'], **kwargs}
             teams_from_league.append(copy.deepcopy(team_dict))
             team_dict.pop('team', None)
+            # NOTE: no API call happens in this loop, so this does not throttle requests;
+            # it only delays the response. Kept intentionally (see project guidance).
             if counter % 5 == 0 and counter != 0:
                 time.sleep(30)  # To respect API rate limits
             counter += 1
-        
+
         return teams_from_league
 
-    def get_team_stats(self, **kwargs: dict) -> dict:
+    def get_team_stats(self, **kwargs) -> str:
         """
-        Fetch data from the specified Soccer API endpoint.
+        Fetch statistics for a team and save them to S3 as JSON.
         """
         endpoint = f"teams/statistics"
         data = self._make_request(endpoint=endpoint, **kwargs)
 
-        #TODO handle cases where data is missing or incomplete
-        #TODO add logging for missing data scenarios
-        item = data.get('response', {})
+        item = data.get('response') or {}
         if isinstance(item, list):
-            for itm in item:
-                if itm.get('team', {}).get('id') == kwargs.get('team'):
-                    item = itm
-                    break
+            item = next((itm for itm in item
+                         if itm.get('team', {}).get('id') == kwargs.get('team')), {})
+        if not item:
+            message = f"get_team_stats: no statistics returned for team_id: {kwargs.get('team')} with parameters: {kwargs}"
+            logger.warning(message)
+            return message
 
         team_item = {
             'team_id' : item.get('team', {}).get('id'),
@@ -179,60 +204,53 @@ class soccer_consumer(base_api_consumer):
             'red_cards': item.get('cards', {}).get('red')
         }
 
+        team_id = team_item['team_id']
         df = pd.DataFrame([team_item])
         buffer = self.generate_buffer_from_dataframe(df, 'json')
-        kwargs = {'team_id': item.get('team', {}).get('id'), **kwargs}
-        self._save_raw_response_to_s3(buffer, endpoint, **kwargs)
-        message = f"get_team_stats completed for team_id: {item.get('team', {}).get('id')} with parameters: {kwargs}"
-        logging.info(message)
+        self._save_raw_response_to_s3(buffer, endpoint, f'{team_id}.json', **kwargs)
+        message = f"get_team_stats completed for team_id: {team_id} with parameters: {kwargs}"
+        logger.info(message)
         return message
-    
-    def get_team_players(self, **kwargs: dict) -> None:
+
+    def get_team_players(self, **kwargs) -> str:
         """
-        Fetch players for a specified team, league, and season.
+        Fetch players for a specified team, league, and season and save them to S3 as parquet.
         """
         endpoint = f"players"
         page_data = self._make_request(endpoint=endpoint, **kwargs)
-        total_pages = page_data.get('paging', {}).get('total', 1)
-        data = page_data.get('response', [])
+        data = self._paginate_results(endpoint, page_data, **kwargs)
         players_list = []
-        for page in range(2, total_pages + 1):
-            kwargs['page'] = page
-            for item in data:
-                player = item.get('player', {})
-                stats = item.get('statistics', [{}])[0] # Stats for the specified season and league
-                
-                player_info = {
-                    'player_id': player.get('id'),
-                    'name': player.get('name'),
-                    'age': player.get('age'),
-                    'first_name': player.get('firstname'),
-                    'last_name': player.get('lastname'),
-                    'games': stats.get('games'),
-                    'goals': stats.get('goals'),
-                    'passes': stats.get('passes'),
-                    'tackles': stats.get('tackles'),
-                    'cards': stats.get('cards'),
-                    'penalty': stats.get('penalty'),
-                    'dribbles': stats.get('dribbles'),
-                    'fouls': stats.get('fouls')
-                }
-                players_list.append(copy.deepcopy(player_info))
-            if page % 5 == 0 and page != 0:
-                time.sleep(30)  # To respect API rate limits
+        for item in data:
+            player = item.get('player', {})
+            stats = (item.get('statistics') or [{}])[0]  # Stats for the specified season and league
 
-            data = self._make_request(endpoint=endpoint, **kwargs).get('response', [])
+            player_info = {
+                'player_id': player.get('id'),
+                'name': player.get('name'),
+                'age': player.get('age'),
+                'first_name': player.get('firstname'),
+                'last_name': player.get('lastname'),
+                'games': stats.get('games'),
+                'goals': stats.get('goals'),
+                'passes': stats.get('passes'),
+                'tackles': stats.get('tackles'),
+                'cards': stats.get('cards'),
+                'penalty': stats.get('penalty'),
+                'dribbles': stats.get('dribbles'),
+                'fouls': stats.get('fouls')
+            }
+            players_list.append(copy.deepcopy(player_info))
+
         df = pd.DataFrame(players_list)
         buffer = self.generate_buffer_from_dataframe(df, 'parquet')
-        kwargs.pop('page', None)
-        self._save_raw_response_to_s3(buffer, endpoint, **kwargs)
-        
+        self._save_raw_response_to_s3(buffer, endpoint, 'data.parquet', **kwargs)
+
         message = f"get_team_players completed for team_id: {kwargs.get('team')} with parameters: {kwargs}"
-        logging.info(message)
+        logger.info(message)
         return message
 
     def generate_buffer_from_dataframe(self, df: pd.DataFrame,
-                                       extension:str='parquet') -> io.BytesIO:
+                                       extension:str='parquet') -> io.BytesIO | io.StringIO:
         """
         Generate an in-memory buffer from a DataFrame.
         """
@@ -242,26 +260,27 @@ class soccer_consumer(base_api_consumer):
         elif extension == 'json':
             buffer = io.StringIO()
             df.to_json(buffer, orient='records', lines=True)
+        else:
+            raise ValueError(f"Unsupported extension: {extension}")
         buffer.seek(0)
         return buffer
-    
-    def fetch_data(self, endpoint):
+
+    def fetch_data(self, endpoint: str, **kwargs) -> dict:
         """
-        Placeholder method to satisfy abstract base class requirement
-        TODO: Implement if needed
+        Fetch the raw JSON response of a single request to an API-Sports endpoint.
         Args:
-            endpoint: API endpoint to fetch from
+            endpoint: API endpoint to fetch from (e.g. 'teams')
+            **kwargs: Query parameters for the request
         """
-        pass
+        return self._make_request(endpoint, **kwargs)
 
 
 
 if __name__ == "__main__":
     #test the soccer consumer
-    api_key = os.getenv('SOCCER_API_KEY', None)  
+    logging.basicConfig()
+    api_key = os.getenv('SOCCER_API_KEY', None)
     soccer_client = soccer_consumer(api_key=api_key)
     soccer_client.authenticate(api_key)
-    data = soccer_client.fetch_data(league=239, season=2024)
+    data = soccer_client.get_teams_from_league(league=239, season=2024)
     print(data)
-
-    

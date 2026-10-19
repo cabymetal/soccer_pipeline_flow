@@ -12,6 +12,12 @@ variable "api_soccer_api_key" {
     default = "prod/soccer/api"
 }
 
+variable "api_max_pages" {
+  description = "Max pages fetched per paginated API-Sports request (free plan rejects page > 3). Empty string means no cap."
+  type        = string
+  default     = "3"
+}
+
 variable "setup_array_tuple" {
   description = "Tuple to setup array resources"
   type = list(object({league: number, season: number}))
