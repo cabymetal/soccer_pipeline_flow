@@ -9,13 +9,21 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pandas (>=2.2.2,<2.3.0)",
-    "pytest (>=8.3.5,<8.4.0)",
     "requests (>=2.31.0,<3.0.0)",
     "pyarrow (>=23.0.0,<24.0.0)",
     "boto3 (>=1.28.45,<2.0.0)"
 ]
 
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.3.5,<8.4.0"
+moto = {version = ">=5.0,<6.0", extras = ["s3", "secretsmanager"]}
+pytest-mock = ">=3.14,<4.0"
+
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

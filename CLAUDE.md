@@ -46,6 +46,10 @@ Terraform packages the entire `src/` directory into `lambda_function.zip` automa
 # Install Python dependencies
 pip install -r requirements.txt
 
+# Unit tests (offline: moto for S3/Secrets Manager, mocked HTTP; config in pyproject.toml)
+pip install -r requirements-dev.txt
+pytest
+
 # Local test of Lambda (uses SOCCER_API_KEY env var)
 python src/lambda_handler.py
 
@@ -114,3 +118,40 @@ databricks bundle run soccer_api_consumer_etl
 - **Databricks cluster** (dev): update `cluster_id` in `databricks.yml` if the cluster changes.
 - **Instance profile ARN** for Databricks→S3 access: configured in `databricks.yml` under `instance_profile_arn`.
 - **Soccer API rate limit**: `soccer_consumer.py` sleeps 30 seconds every 5 teams to respect the free-tier rate limit.
+- **`API_MAX_PAGES`** (Lambda env var, Terraform `api_max_pages`, default `"3"`): the API-Sports free plan rejects `page > 3` (returned as HTTP 200 with an `errors` body, raised as `soccer_api_error`). `_paginate_results` stops at this page and logs a `Truncating ... results` WARNING, so squads with more than 60 players are written partially. Set to `""` on a paid plan to remove the cap.
+- **Free-plan limits**: 100 requests/day and seasons 2021–2023 only. `GET /status` does not count against the quota; use it to check usage before running live tests.
+
+## Local Environment: Norton TLS interception (Windows dev machine)
+
+Norton Antivirus "Web/Mail Shield" re-signs HTTPS traffic with its own root certificate (`CN=Norton Web/Mail Shield Root`). Windows trusts it, but tools with their own CA bundle don't. Symptoms:
+
+- `terraform plan/validate`: `Failed to load plugin schemas ... x509: certificate signed by unknown authority`. Verified 2026-10-19: Norton intercepts TLS even on `127.0.0.1` (any port) and swaps self-signed certs for `CN=Norton Web/Mail Shield Self-signed Root`; Terraform pins each provider plugin's own cert, so the gRPC handshake always fails. A CA bundle cannot fix this. File-scan exclusions don't help; it must be excluded in Web/Mail Shield (SSL/TLS scanning) or the shield turned off.
+- `aws` CLI: `SSL validation failed ... CERTIFICATE_VERIFY_FAILED`
+- `pip` / `uv`: `invalid peer certificate: UnknownIssuer`
+- LocalStack Lambdas calling external HTTPS APIs fail certificate verification
+
+**Permanent fix (do this first)**: in Norton → Settings → Firewall/Antivirus → *Scans and Risks* → **Exclusions / Low Risks** → *Items to Exclude from Scans* (and, if present, Web/Mail Shield → *Exclusions* / disable "SSL/TLS scanning" for these apps), add:
+
+- `C:\ProgramData\chocolatey\bin\terraform.exe` (and the real binary under `C:\ProgramData\chocolatey\lib\terraform\`)
+- `<repo>\infra\.terraform\providers\` (provider plugin executables)
+- `C:\Program Files\Amazon\AWSCLIV2\aws.exe`
+- Python / uv executables used for this project
+
+Verify with `cd infra && terraform validate` — it must not report "Failed to load plugin schemas".
+
+**Workarounds without the exclusion** (verification stays on; never use `--no-verify-ssl`):
+
+- uv: `uv pip install --native-tls ...` (or `UV_NATIVE_TLS=1`)
+- aws CLI / boto3 / requests: build a bundle of certifi + the Norton root and point `AWS_CA_BUNDLE`, `REQUESTS_CA_BUNDLE` (and `curl --cacert`) at it:
+
+  ```powershell
+  $c = Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*Norton Web/Mail Shield Root*' | Select-Object -First 1
+  $pem = "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($c.RawData, 'InsertLineBreaks') + "`n-----END CERTIFICATE-----`n"
+  $certifi = python -c "import certifi; print(certifi.where())"
+  New-Item -ItemType Directory -Force "$env:USERPROFILE\.certs" | Out-Null
+  [IO.File]::WriteAllText("$env:USERPROFILE\.certs\norton-ca-bundle.pem", [IO.File]::ReadAllText($certifi) + "`n" + $pem)
+  ```
+
+- LocalStack smoke tests that call API-Sports: include that bundle in the test zip and set `REQUESTS_CA_BUNDLE=/var/task/ca-bundle.pem` on the function (LocalStack only — never ship it to AWS). In Git Bash set `MSYS_NO_PATHCONV=1` so `/var/task/...` isn't rewritten to a Windows path.
+- LocalStack community does not support Lambda layers: bundle pandas/pyarrow/requests (`manylinux_2_28` wheels for pyarrow 23) directly into the function zip for local tests.
+- Terraform has no workaround other than the exclusion; deploy to LocalStack with the `aws` CLI against `--endpoint-url http://localhost:4566` if needed.
