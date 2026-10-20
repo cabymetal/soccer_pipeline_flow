@@ -12,6 +12,18 @@ logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 # cached for the lifetime of the Lambda container (warm invocations skip Secrets Manager)
 _api_key = None
 
+# action -> (required event fields, optional event fields); the action name is the client method
+ACTIONS = {
+    'get_status': ((), ()),
+    'get_leagues': (('league',), ()),
+    'get_teams': (('league', 'season'), ()),
+    'get_squad': (('team',), ()),
+    'get_team_players': (('team', 'season'), ()),
+    'get_standings': (('league', 'season'), ()),
+    'get_fixtures': (('league', 'season'), ('lookback_days',)),
+    'get_fixture_details': (('ids', 'league', 'season'), ()),
+}
+
 
 def get_client_secret():
     """Retrieve the secret data from secrets from a secure location."""
@@ -53,22 +65,29 @@ def read_api_client(api_type: str):
 
     return factory_class
 
-def _is_valid_event(action, league, season, teamid) -> bool:
-    if not (league and season):
+def _is_valid_event(event: dict) -> bool:
+    spec = ACTIONS.get(event.get('action'))
+    if spec is None:
         return False
-    if action == 'get_teams_from_league':
-        return True
-    return action in ('get_team_stats', 'get_team_players') and bool(teamid)
+    required, _ = spec
+    return all(event.get(field) for field in required)
+
+def _build_kwargs(event: dict) -> dict:
+    required, optional = ACTIONS[event['action']]
+    kwargs = {field: event[field] for field in required}
+    kwargs.update({field: event[field] for field in optional if event.get(field) is not None})
+
+    if event['action'] == 'get_fixtures' and 'lookback_days' not in kwargs:
+        # backfill re-details the whole season; regular runs only the recent window
+        if event.get('mode') == 'backfill':
+            kwargs['lookback_days'] = None
+        else:
+            kwargs['lookback_days'] = int(os.getenv('FIXTURE_LOOKBACK_DAYS', '10'))
+    return kwargs
 
 def lambda_handler(event: dict, context: dict) -> dict:
-    #get payload from event if needed
-    event_action = event.get('action', None)
-    event_league = event.get('league', None)
-    event_season = event.get('season', None)
-    event_teamid = event.get('teamid', None)
-
     # validate before calling Secrets Manager so bad events don't cost a secret lookup
-    if not _is_valid_event(event_action, event_league, event_season, event_teamid):
+    if not _is_valid_event(event):
         logger.warning("Ignoring event with unrecognized action or missing parameters: %s", event)
         return {
             'statusCode': 204,
@@ -80,43 +99,27 @@ def lambda_handler(event: dict, context: dict) -> dict:
     #add selection logic for different API factories
     factory = read_api_client("soccer")
     api_client = factory(api_key=api_key).create_api_client()
-
-    # Now you can use api_client to interact with the Soccer API
     api_client.authenticate(api_key)
+    api_client.set_run_context(run_id=event.get('run_id'), run_date=event.get('run_date'))
 
-    if event_action == 'get_teams_from_league':
-        teams_from_league = api_client.get_teams_from_league(
-                league = event_league,
-                season = event_season
-                )
+    action = event['action']
+    result = getattr(api_client, action)(**_build_kwargs(event))
 
-        return {
-            'statusCode': 200,
-            'teams': json.dumps(teams_from_league)
-        }
-
-    if event_action == 'get_team_stats':
-        message = api_client.get_team_stats(league=event_league,
-                                            season=event_season,
-                                            team=event_teamid)
-    else:
-        message = api_client.get_team_players(league=event_league,
-                                              season=event_season,
-                                              team=event_teamid)
+    # native JSON so Step Functions can map over lists without States.StringToJson
     return {
         'statusCode': 200,
-        **event,
-        'body': json.dumps(message)
+        'action': action,
+        'result': result
     }
 
 if __name__ == "__main__":
     # For local testing purposes
     logging.basicConfig()
     test_event = {
-       "action": "get_team_stats",
-      "league": 140,
-      "teamid": 536,
-      "season": 2024
+        "action": "get_fixtures",
+        "league": 239,
+        "season": 2026,
+        "lookback_days": 10
     }
     response = lambda_handler(test_event, None)
     print(response)

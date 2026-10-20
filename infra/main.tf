@@ -24,6 +24,8 @@ provider "aws" {
         secretsmanager = local.current.localstack_endpoint
         iam            = local.current.localstack_endpoint
         stepfunctions  = local.current.localstack_endpoint
+        logs           = local.current.localstack_endpoint
+        scheduler      = local.current.localstack_endpoint
     }
 
 }
@@ -33,7 +35,7 @@ provider "aws" {
 #           S3 Bucket            #   
 ##################################
 resource "aws_s3_bucket" "target_bucket" {
-    bucket = "cmurillo-target-bucket"
+    bucket = var.target_bucket_name
     force_destroy = true
 
     tags = {
@@ -253,6 +255,12 @@ data "archive_file" "lambda_zip" {
     output_path = "${path.module}/../src/lambda_function.zip"
 }
 
+resource "aws_cloudwatch_log_group" "lambda_log_group" {
+    # created by Terraform (not implicitly by Lambda) so logs expire
+    name              = "/aws/lambda/api_consumer_lambda"
+    retention_in_days = 30
+}
+
 resource "aws_lambda_function" "lambda_function" {
     function_name = "api_consumer_lambda"
     role          = aws_iam_role.lambda_exec_role.arn
@@ -263,13 +271,17 @@ resource "aws_lambda_function" "lambda_function" {
     source_code_hash = data.archive_file.lambda_zip.output_base64sha256
     layers          = local.current.lambda_layer_arn != null ? [local.current.lambda_layer_arn] : []
 
-    timeout = 600 # 10 minutes
+    timeout     = 600 # 10 minutes
+    memory_size = 256 # raw JSON pages of fixture details can be several MB
+
+    depends_on = [ aws_cloudwatch_log_group.lambda_log_group ]
 
     environment {
         variables = {
             TARGET_BUCKET = aws_s3_bucket.target_bucket.bucket
             API_SOCCER_API_KEY = var.api_soccer_api_key
             API_MAX_PAGES = var.api_max_pages
+            FIXTURE_LOOKBACK_DAYS = var.fixture_lookback_days
         }
     }
   
@@ -316,15 +328,135 @@ resource "aws_iam_role_policy" "sfn_lambda_invoke" {
 }
 
 ##################################
-#       Step Function            #
+#       Step Functions           #
 ##################################
 
-resource "aws_sfn_state_machine" "soccer_workflow" {
-    name     = "soccer_data_workflow"
+# weekly: fixtures + match details, standings, player season stats (also used for backfill)
+resource "aws_sfn_state_machine" "soccer_weekly" {
+    name     = "soccer_weekly_workflow"
     role_arn = aws_iam_role.step_function_role.arn
 
-    definition = templatefile("${path.module}/definitions/soccer_workflow.json.tpl", {
-        setup_array_tuple = jsonencode(var.setup_array_tuple),
+    definition = templatefile("${path.module}/definitions/soccer_weekly.json.tpl", {
+        competitions      = jsonencode(var.competitions),
+        min_quota         = var.min_quota,
         lambda_soccer_arn = aws_lambda_function.lambda_function.arn
     })
+}
+
+# monthly: leagues/coverage, teams, squads
+resource "aws_sfn_state_machine" "soccer_monthly" {
+    name     = "soccer_monthly_workflow"
+    role_arn = aws_iam_role.step_function_role.arn
+
+    definition = templatefile("${path.module}/definitions/soccer_monthly.json.tpl", {
+        competitions      = jsonencode(var.competitions),
+        lambda_soccer_arn = aws_lambda_function.lambda_function.arn
+    })
+}
+
+output "weekly_state_machine_arn" {
+    value = aws_sfn_state_machine.soccer_weekly.arn
+}
+
+output "monthly_state_machine_arn" {
+    value = aws_sfn_state_machine.soccer_monthly.arn
+}
+
+##################################
+#     EventBridge Scheduler      #
+##################################
+
+data "aws_iam_policy_document" "scheduler_assume_role_policy" {
+    statement {
+        effect  = "Allow"
+        actions = ["sts:AssumeRole"]
+
+        principals {
+            type        = "Service"
+            identifiers = ["scheduler.amazonaws.com"]
+        }
+    }
+}
+
+resource "aws_iam_role" "scheduler_role" {
+    name               = "soccer_scheduler_role"
+    assume_role_policy = data.aws_iam_policy_document.scheduler_assume_role_policy.json
+}
+
+resource "aws_iam_role_policy" "scheduler_start_execution" {
+    name = "soccer_scheduler_start_execution_policy"
+    role = aws_iam_role.scheduler_role.id
+
+    policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+            {
+                Effect   = "Allow"
+                Action   = ["states:StartExecution"]
+                # only the two soccer workflows
+                Resource = [
+                    aws_sfn_state_machine.soccer_weekly.arn,
+                    aws_sfn_state_machine.soccer_monthly.arn
+                ]
+            }
+        ]
+    })
+}
+
+locals {
+    schedule_state = local.current.schedules_enabled ? "ENABLED" : "DISABLED"
+}
+
+# Monday morning, after the weekend matches
+resource "aws_scheduler_schedule" "soccer_weekly" {
+    name                         = "soccer_weekly"
+    schedule_expression          = "cron(0 6 ? * MON *)"
+    schedule_expression_timezone = "UTC"
+    state                        = local.schedule_state
+
+    flexible_time_window {
+        mode = "OFF"
+    }
+
+    target {
+        arn      = aws_sfn_state_machine.soccer_weekly.arn
+        role_arn = aws_iam_role.scheduler_role.arn
+        input    = jsonencode({})
+    }
+}
+
+# Thursday morning, matches only (midweek league/cup/UCL rounds)
+resource "aws_scheduler_schedule" "soccer_midweek_fixtures" {
+    name                         = "soccer_midweek_fixtures"
+    schedule_expression          = "cron(0 6 ? * THU *)"
+    schedule_expression_timezone = "UTC"
+    state                        = local.schedule_state
+
+    flexible_time_window {
+        mode = "OFF"
+    }
+
+    target {
+        arn      = aws_sfn_state_machine.soccer_weekly.arn
+        role_arn = aws_iam_role.scheduler_role.arn
+        input    = jsonencode({ fixtures_only = true })
+    }
+}
+
+# 1st of the month, before the weekly run window
+resource "aws_scheduler_schedule" "soccer_monthly" {
+    name                         = "soccer_monthly"
+    schedule_expression          = "cron(0 4 1 * ? *)"
+    schedule_expression_timezone = "UTC"
+    state                        = local.schedule_state
+
+    flexible_time_window {
+        mode = "OFF"
+    }
+
+    target {
+        arn      = aws_sfn_state_machine.soccer_monthly.arn
+        role_arn = aws_iam_role.scheduler_role.arn
+        input    = jsonencode({})
+    }
 }

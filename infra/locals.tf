@@ -11,6 +11,8 @@ locals {
     secret_key       = null
     localstack_endpoint = null
     lambda_layer_arn = null
+    # EventBridge schedules are created everywhere but only fire where enabled
+    schedules_enabled = false
   }
   
   # Test environment configuration
@@ -27,7 +29,9 @@ locals {
   prod_config = {
     region           = "us-east-1"
     tags             = { Environment = "Production" }
+    # provides requests (not in the python3.12 runtime); pandas in it is no longer used
     lambda_layer_arn = "arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:12"
+    schedules_enabled = true
   }
   
   # Merge environment-specific config with defaults
