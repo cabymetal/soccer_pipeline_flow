@@ -97,7 +97,7 @@ aws stepfunctions start-execution \
 
 ### Databricks Asset Bundle
 
-All commands run from `databricks_pipeline/soccer_api_consumer/`.
+All commands run from `databricks_pipeline/soccer_api_consumer/`, after loading the repo-root `.env` (see Key Configuration).
 
 ```bash
 # Install dev dependencies
@@ -129,9 +129,7 @@ databricks bundle run soccer_api_consumer_etl
 
 - **Soccer API key** is read at Lambda runtime from AWS Secrets Manager (`prod/soccer/api`). The `API_SOCCER_API_KEY` Lambda env var is a fallback path, not the actual key value.
 - **S3 bucket**: never hardcode the bucket name in repo files. Terraform reads it from `TF_VAR_target_bucket_name` (required variable `target_bucket_name`) and passes it to the Lambda as `TARGET_BUCKET`; the Databricks bundle reads it from `BUNDLE_VAR_source_path` (`s3://<bucket>`).
-- **Databricks workspace**: `https://dbc-06090e42-ea4e.cloud.databricks.com`
-- **Databricks cluster** (dev): update `cluster_id` in `databricks.yml` if the cluster changes.
-- **Instance profile ARN** for Databricks→S3 access: configured in `databricks.yml` under `instance_profile_arn`.
+- **Databricks identifiers** are not stored in repo files. Load the gitignored repo-root `.env` (`set -a; . ./.env; set +a`) before running the CLI: `DATABRICKS_HOST` (workspace URL), `BUNDLE_VAR_cluster_id` (dev cluster), `BUNDLE_VAR_instance_profile_arn` (Databricks→S3 instance profile), `BUNDLE_VAR_source_path` (`s3://<bucket>`). The prod root path and owner use `${workspace.current_user.userName}`.
 - **Soccer API rate limit**: header-based, no fixed sleeps. `_make_request` waits 60s when `X-RateLimit-Remaining` (per minute) reaches 1, retries HTTP 429 / `errors.rateLimit` (after 60s) and 5xx/network errors (2/4/8s), and raises `soccer_api_error` on other `errors` bodies (e.g. daily quota exhausted).
 - **API plan / volume**: designed for the paid Pro tier (~7,500 requests/day). Estimated ~225 requests per weekly run, ~1,200/month, ~1,250 for the one-time 3-season backfill. `GET /status` does not count against the quota; the weekly workflow checks it first (`min_quota`, default 300).
 - **`API_MAX_PAGES`** (Lambda env var, Terraform `api_max_pages`, default `""` = no cap): only for the free plan, which rejects `page > 3`; `_iter_pages` then stops at this page and logs a `Truncating ... results` WARNING.

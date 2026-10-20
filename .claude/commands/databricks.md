@@ -73,16 +73,19 @@ databricks bundle validate
 
 ## Key configuration values
 
-Sensitive values are stored in `.env` (gitignored) at the repo root. Load them before running commands:
+Environment-specific identifiers are never written in repo files: `databricks.yml` declares the variables without values, and the values live in `.env` (gitignored) at the repo root. Load them before running commands:
 
 ```bash
-export $(grep -v '^#' .env | xargs)
+set -a; . ./.env; set +a
 ```
 
-| Setting | Value |
-|---------|-------|
-| Workspace | `https://dbc-06090e42-ea4e.cloud.databricks.com` |
-| Dev cluster ID | `$DATABRICKS_CLUSTER_ID` (set in `.env`) |
-| Instance profile | `arn:aws:iam::$AWS_ACCOUNT_ID:instance-profile/databricks-s3-instance-profile` |
+| Setting | Source |
+|---------|--------|
+| Workspace | `$DATABRICKS_HOST` (bundles can't interpolate variables in `workspace.host`) |
+| Dev cluster ID | `$BUNDLE_VAR_cluster_id` |
+| Instance profile | `$BUNDLE_VAR_instance_profile_arn` (`arn:aws:iam::<account-id>:instance-profile/databricks-s3-instance-profile`) |
 | Unity Catalog | `soccer` |
 | S3 source | `$BUNDLE_VAR_source_path` |
+| Prod root path / owner | `${workspace.current_user.userName}` (the deploying user) |
+
+If the CLI reports `cannot configure default credentials`, the login expired: run `databricks auth login --host $DATABRICKS_HOST`.

@@ -18,21 +18,23 @@ This project connects directly to an external S3 bucket using an AWS Instance Pr
 2. In Databricks, go to **Settings** > **Security** > **Instance Profiles**.
 3. Click **Add Instance Profile** and paste the ARN.
 
-### 2. Configure `databricks.yml`
-Before deploying, you must update the variables in `databricks.yml` to match your environment.
+### 2. Set the environment variables
+`databricks.yml` contains no environment-specific identifiers. Set them as environment variables
+(the repo-root `.env` is gitignored and is the place to keep them), then load them before running the CLI:
 
-*   **cluster_id**: The ID of the interactive cluster to use for non-pipeline tasks.
-*   **instance_profile_arn**: The ARN configured in Step 1.
-*   **source_path**: The S3 URI where data is located (e.g., `s3://<bucket>/`). It has no default: set the `BUNDLE_VAR_source_path` environment variable before `databricks bundle deploy`.
+| Variable | Value |
+| --- | --- |
+| `DATABRICKS_HOST` | Workspace URL (bundles can't use variables in `workspace.host`) |
+| `BUNDLE_VAR_source_path` | S3 URI of the raw data, e.g. `s3://<bucket>` |
+| `BUNDLE_VAR_cluster_id` | ID of the interactive cluster used for non-pipeline tasks (dev) |
+| `BUNDLE_VAR_instance_profile_arn` | The ARN configured in Step 1 |
 
-Example `databricks.yml` configuration:
-```yaml
-targets:
-  dev:
-    variables:
-      cluster_id: "0204-123123-x0ko9ixc"
-      instance_profile_arn: "arn:aws:iam::123456789012:instance-profile/databricks-s3-instance-profile"
+```bash
+# from the repo root
+set -a; . ./.env; set +a
 ```
+
+The prod deployment path and owner use the deploying user (`${workspace.current_user.userName}`).
 
 ## Deployment
 
