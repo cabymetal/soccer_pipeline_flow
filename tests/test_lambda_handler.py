@@ -60,46 +60,70 @@ def test_read_api_client_unknown_raises():
 
 @pytest.fixture
 def consumer(mocker):
-    """Patch the secret lookup and the soccer client methods."""
-    secret = mocker.patch.object(handler, "get_client_secret", return_value="tok")
+    """Patch the secret lookup and every soccer client action."""
     from api_clients.soccer_consumer import soccer_consumer
 
-    mocks = {
-        "secret": secret,
-        "teams": mocker.patch.object(soccer_consumer, "get_teams_from_league",
-                                     return_value=[{"team": 1, "league": 39, "season": 2024}]),
-        "stats": mocker.patch.object(soccer_consumer, "get_team_stats", return_value="stats ok"),
-        "players": mocker.patch.object(soccer_consumer, "get_team_players", return_value="players ok"),
-    }
+    mocks = {"secret": mocker.patch.object(handler, "get_client_secret", return_value="tok")}
+    for action in handler.ACTIONS:
+        mocks[action] = mocker.patch.object(soccer_consumer, action, return_value={"ok": action})
+    mocks["context"] = mocker.patch.object(soccer_consumer, "set_run_context",
+                                           wraps=soccer_consumer.set_run_context, autospec=True)
     return mocks
 
 
-def test_handler_get_teams_from_league(consumer):
-    result = handler.lambda_handler(
-        {"action": "get_teams_from_league", "league": 39, "season": 2024}, None)
-
-    assert result["statusCode"] == 200
-    assert json.loads(result["teams"]) == [{"team": 1, "league": 39, "season": 2024}]
-    consumer["teams"].assert_called_once_with(league=39, season=2024)
-
-
-@pytest.mark.parametrize("action, mock_name, body", [
-    ("get_team_stats", "stats", "stats ok"),
-    ("get_team_players", "players", "players ok"),
+@pytest.mark.parametrize("event, expected_kwargs", [
+    ({"action": "get_status"}, {}),
+    ({"action": "get_leagues", "league": 239}, {"league": 239}),
+    ({"action": "get_teams", "league": 39, "season": 2026}, {"league": 39, "season": 2026}),
+    ({"action": "get_squad", "team": 33}, {"team": 33}),
+    ({"action": "get_team_players", "team": 33, "season": 2026}, {"team": 33, "season": 2026}),
+    ({"action": "get_standings", "league": 239, "season": 2026}, {"league": 239, "season": 2026}),
+    ({"action": "get_fixtures", "league": 39, "season": 2026, "lookback_days": 3},
+     {"league": 39, "season": 2026, "lookback_days": 3}),
+    ({"action": "get_fixture_details", "ids": [1, 2], "league": 39, "season": 2026},
+     {"ids": [1, 2], "league": 39, "season": 2026}),
 ])
-def test_handler_team_actions(consumer, action, mock_name, body):
-    event = {"action": action, "league": 39, "season": 2024, "teamid": 33}
+def test_handler_dispatches_actions(consumer, event, expected_kwargs):
+    result = handler.lambda_handler({**event, "extra": "ignored"}, None)
 
-    result = handler.lambda_handler(event, None)
+    assert result == {"statusCode": 200, "action": event["action"],
+                      "result": {"ok": event["action"]}}
+    consumer[event["action"]].assert_called_once_with(**expected_kwargs)
 
-    assert result["statusCode"] == 200
-    assert json.loads(result["body"]) == body
-    assert {k: result[k] for k in event} == event
-    consumer[mock_name].assert_called_once_with(league=39, season=2024, team=33)
+
+def test_handler_returns_native_json_lists(consumer):
+    consumer["get_teams"].return_value = [{"team": 1, "league": 39, "season": 2026}]
+
+    result = handler.lambda_handler({"action": "get_teams", "league": 39, "season": 2026}, None)
+
+    assert result["result"] == [{"team": 1, "league": 39, "season": 2026}]
+
+
+def test_handler_fixtures_default_lookback_from_env(consumer, monkeypatch):
+    monkeypatch.setenv("FIXTURE_LOOKBACK_DAYS", "7")
+
+    handler.lambda_handler({"action": "get_fixtures", "league": 39, "season": 2026}, None)
+
+    consumer["get_fixtures"].assert_called_once_with(league=39, season=2026, lookback_days=7)
+
+
+def test_handler_fixtures_backfill_takes_whole_season(consumer):
+    handler.lambda_handler({"action": "get_fixtures", "league": 39, "season": 2024,
+                            "mode": "backfill"}, None)
+
+    consumer["get_fixtures"].assert_called_once_with(league=39, season=2024, lookback_days=None)
+
+
+def test_handler_passes_run_context(consumer):
+    handler.lambda_handler({"action": "get_status", "run_id": "exec-1",
+                            "run_date": "2026-10-19"}, None)
+
+    _, kwargs = consumer["context"].call_args
+    assert kwargs == {"run_id": "exec-1", "run_date": "2026-10-19"}
 
 
 def test_handler_caches_api_key_across_invocations(consumer):
-    event = {"action": "get_team_stats", "league": 39, "season": 2024, "teamid": 33}
+    event = {"action": "get_status"}
 
     handler.lambda_handler(event, None)
     handler.lambda_handler(event, None)
@@ -109,10 +133,12 @@ def test_handler_caches_api_key_across_invocations(consumer):
 
 @pytest.mark.parametrize("event", [
     {},
-    {"action": "unknown", "league": 39, "season": 2024, "teamid": 33},
-    {"action": "get_teams_from_league", "league": 39},
-    {"action": "get_team_stats", "league": 39, "season": 2024},
-    {"action": "get_team_players", "season": 2024, "teamid": 33},
+    {"action": "unknown", "league": 39, "season": 2026},
+    {"action": "get_team_stats", "league": 39, "season": 2026, "teamid": 33},
+    {"action": "get_teams", "league": 39},
+    {"action": "get_team_players", "season": 2026},
+    {"action": "get_fixture_details", "ids": [], "league": 39, "season": 2026},
+    {"action": "get_leagues"},
 ])
 def test_handler_unrecognised_or_incomplete_returns_204(consumer, event):
     result = handler.lambda_handler(event, None)

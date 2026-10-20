@@ -1,4 +1,5 @@
 import copy
+import json
 from unittest.mock import MagicMock
 
 import boto3
@@ -27,43 +28,37 @@ def team_item(team_id: int) -> dict:
 
 def player_item(player_id: int) -> dict:
     return {
-        "player": {
-            "id": player_id,
-            "name": f"P. Player{player_id}",
-            "age": 25,
-            "firstname": "Player",
-            "lastname": f"Player{player_id}",
-        },
-        "statistics": [{
-            "games": {"appearences": 10, "minutes": 900},
-            "goals": {"total": 1, "assists": 2},
-            "passes": {"total": 300, "accuracy": 80},
-            "tackles": {"total": 5},
-            "cards": {"yellow": 1, "red": 0},
-            "penalty": {"scored": 0, "missed": 0},
-            "dribbles": {"attempts": 4, "success": 2},
-            "fouls": {"drawn": 3, "committed": 2},
-        }],
+        "player": {"id": player_id, "name": f"P. Player{player_id}"},
+        "statistics": [
+            {"league": {"id": 39}, "games": {"appearences": 10}},
+            {"league": {"id": 45}, "games": {"appearences": 2}},
+        ],
     }
 
 
-def team_stats_item(team_id: int) -> dict:
+def fixture_item(fixture_id: int, status: str = "FT",
+                 date: str = "2026-10-18T15:00:00+00:00") -> dict:
     return {
-        "team": {"id": team_id, "name": f"Team {team_id}"},
-        "form": "WWDL",
-        "fixtures": {
-            "played": {"total": 38},
-            "wins": {"total": 20},
-            "draws": {"total": 10},
-            "loses": {"total": 8},
+        "fixture": {"id": fixture_id, "date": date, "status": {"short": status}},
+        "league": {"id": 239, "season": 2026, "round": "Clausura - 15"},
+    }
+
+
+def league_item(league_id: int, seasons: list) -> dict:
+    return {"league": {"id": league_id, "type": "League"}, "seasons": seasons}
+
+
+def season_item(year: int, current: bool = False, players: bool = True,
+                events: bool = True, standings: bool = True) -> dict:
+    return {
+        "year": year,
+        "current": current,
+        "coverage": {
+            "fixtures": {"events": events, "lineups": events,
+                         "statistics_fixtures": events, "statistics_players": events},
+            "standings": standings,
+            "players": players,
         },
-        "goals": {"for": {"total": {"total": 60}}, "against": {"total": {"total": 30}}},
-        "biggest": {"wins": {"home": "4-0"}, "loses": {"away": "0-3"}},
-        "clean_sheet": {"home": 8, "away": 5, "total": 13},
-        "failed_to_score": {"home": 2, "away": 4, "total": 6},
-        "penalty": {"scored": {"total": 5}, "missed": {"total": 1}},
-        "lineups": [{"formation": "4-3-3", "played": 30}],
-        "cards": {"yellow": {}, "red": {}},
     }
 
 
@@ -95,7 +90,7 @@ def reset_module_caches(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_sleep(mocker):
-    """The consumer sleeps 30s for rate limiting; tests must not wait."""
+    """The consumer sleeps on rate limits and retries; tests must not wait."""
     return mocker.patch("api_clients.soccer_consumer.time.sleep")
 
 
@@ -113,6 +108,7 @@ def client():
 
     consumer = soccer_consumer(api_key="dummy")
     consumer.authenticate("dummy")
+    consumer.set_run_context(run_id="run1", run_date="2026-10-19")
     return consumer
 
 
@@ -121,14 +117,17 @@ def fake_api(mocker):
     """
     Patch requests.get to serve the given pages in order.
     The page is picked from params['page'] (default 1), mirroring API-Sports paging.
+    Optional quota headers are returned on every response.
     Returns the mock so tests can inspect the calls made.
     """
-    def _install(*pages):
+    def _install(*pages, headers=None):
         def _get(url, headers=None, params=None, **_):
             page = (params or {}).get("page", 1)
-            response = MagicMock(status_code=200)
+            response = MagicMock(status_code=200, headers=dict(response_headers))
             response.json.return_value = copy.deepcopy(pages[page - 1])
             return response
+
+        response_headers = headers or {}
 
         return mocker.patch("api_clients.soccer_consumer.requests.get", side_effect=_get)
 
@@ -137,3 +136,7 @@ def fake_api(mocker):
 
 def list_keys(s3_client) -> list:
     return [obj["Key"] for obj in s3_client.list_objects_v2(Bucket=BUCKET).get("Contents", [])]
+
+
+def read_json(s3_client, key) -> dict:
+    return json.loads(s3_client.get_object(Bucket=BUCKET, Key=key)["Body"].read())

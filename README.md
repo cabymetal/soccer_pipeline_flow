@@ -16,7 +16,8 @@ api_consumer/
 │   ├── terraform.tfstate            # Terraform state file
 │   ├── terraform.tfstate.backup     # Terraform state backup
 │   └── definitions/                 # Step Function JSON templates
-│       └── soccer_workflow.json.tpl # Soccer workflow definition
+│       ├── soccer_weekly.json.tpl   # Weekly: matches, standings, player stats (+ backfill)
+│       └── soccer_monthly.json.tpl  # Monthly: leagues, teams, squads
 │
 ├── databricks_pipeline/
 │   └── soccer_api_consumer/     # Databricks Asset Bundle
@@ -106,14 +107,19 @@ Create a `terraform.tfvars` file in the `infra/` directory:
 ```hcl
 aws_region           = "us-east-1"
 api_soccer_api_key   = "your_soccer_api_key"
-setup_array_tuple    = ["league1", "league2", "season2024"]
+# optional: override the 11 default competitions
+# competitions = [
+#   { league = 239, name = "Primera A", type = "league", has_standings = true, season = 2026 },
+# ]
 ```
 
 **Required Variables:**
 
 - `aws_region`: AWS region for deployment
 - `api_soccer_api_key`: API key for soccer data service
-- `setup_array_tuple`: Array of leagues and seasons to process
+- `competitions` (optional): competitions to ingest; defaults to Premier League, La Liga, Serie A, Bundesliga, Primera A (Colombia), their main cups and the Champions League. Bump each `season` when a new one starts (calendar year for Colombia, start year for Europe)
+- `api_max_pages` (optional, default `""`): page cap, only needed on the free API plan (`"3"`)
+- `fixture_lookback_days` (optional, default 10), `min_quota` (optional, default 300)
 
 ### 5. Deploy Infrastructure
 
@@ -130,10 +136,10 @@ terraform apply
 
 The Lambda function (`lambda_handler.py`) serves as the entry point for the serverless application. It:
 
-- Receives events from Step Functions
+- Receives events from Step Functions (`action` + parameters, see `ACTIONS` in `lambda_handler.py`)
 - Instantiates appropriate API clients using the factory pattern
-- Processes API responses
-- Writes data to S3
+- Writes each API page unmodified (JSON envelope) to the append-only raw zone: `raw/{entity}/{partitions}/ingest_date=YYYY-MM-DD/`
+- Returns small native-JSON results (team lists, fixture-id chunks) for orchestration
 
 ### API Clients
 
@@ -144,8 +150,9 @@ The Lambda function (`lambda_handler.py`) serves as the entry point for the serv
 
 **Soccer Consumer (`soccer_consumer.py`)**
 
-- Implements soccer/football data API consumption
-- Fetches league and match information
+- Implements soccer/football data API consumption (API-Sports v3)
+- Fetches leagues, teams, squads, player season stats, standings, fixtures and match details (events, lineups, statistics, players via `fixtures?ids=`, 20 matches per request)
+- Header-based rate limiting with retries
 
 **Spotify Consumer (`spotify_consumer.py`)**
 
@@ -154,11 +161,11 @@ The Lambda function (`lambda_handler.py`) serves as the entry point for the serv
 
 ### Step Functions Workflow
 
-The workflow (`definitions/soccer_workflow.json.tpl`) orchestrates:
+Two workflows, started by EventBridge Scheduler (enabled in the `prod` workspace only):
 
-- Lambda invocation with configurable parameters
-- Error handling and retries
-- Data transformation between steps
+- **`soccer_weekly_workflow`** (`definitions/soccer_weekly.json.tpl`), Mondays 06:00 UTC: quota pre-flight, then per competition fixtures + match details, standings and player season stats. Thursdays 06:00 UTC it runs again with `{"fixtures_only": true}`. A one-time backfill is `{"mode": "backfill", "seasons": [2024, 2025, 2026]}`.
+- **`soccer_monthly_workflow`** (`definitions/soccer_monthly.json.tpl`), 1st of the month: league metadata, teams and squads.
+- Failed Lambda calls are retried and then recorded in the execution output without stopping the other competitions.
 
 ## Configuration
 
@@ -169,8 +176,10 @@ Set in `main.tf` under the Lambda environment block:
 ```hcl
 environment {
     variables = {
-        TARGET_BUCKET      = aws_s3_bucket.target_bucket.bucket
-        API_SOCCER_API_KEY = var.api_soccer_api_key
+        TARGET_BUCKET         = aws_s3_bucket.target_bucket.bucket
+        API_SOCCER_API_KEY    = var.api_soccer_api_key   # Secrets Manager secret name
+        API_MAX_PAGES         = var.api_max_pages
+        FIXTURE_LOOKBACK_DAYS = var.fixture_lookback_days
     }
 }
 ```
@@ -364,7 +373,7 @@ error: **Error: "S3 path style addressing"**
 error: **Error: "Step Functions validation failed"**
 
 - Ensure `stepfunctions` endpoint is configured in provider
-- Validate JSON template syntax in `soccer_workflow.json.tpl`
+- Validate JSON template syntax in `soccer_weekly.json.tpl` / `soccer_monthly.json.tpl`
 
 ## Deployment Workflow for LocalStack
 
