@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This project is a two-stage data pipeline:
 
-1. **Ingestion (AWS)**: A Python Lambda function fetches data from the football API-Sports (`v3.football.api-sports.io`, paid plan) and writes every API page unmodified, append-only, to S3 (`cmurillo-target-bucket`) under `raw/{entity}/{partitions}/ingest_date=YYYY-MM-DD/{run_id}_{tag}_pNNN.json` (e.g. `raw/fixture_details/league=39/season=2026/ingest_date=2026-10-19/...`). Each file is an envelope (`ingest_ts`, `run_id`, `endpoint`, `params`, `paging`, `results`, `response`). Two Step Functions workflows, started by EventBridge Scheduler, orchestrate it over 11 competitions: weekly (matches + match details, standings, player season stats) and monthly (leagues, teams, squads).
+1. **Ingestion (AWS)**: A Python Lambda function fetches data from the football API-Sports (`v3.football.api-sports.io`, paid plan) and writes every API page unmodified, append-only, to S3 (bucket from the `TF_VAR_target_bucket_name` environment variable) under `raw/{entity}/{partitions}/ingest_date=YYYY-MM-DD/{run_id}_{tag}_pNNN.json` (e.g. `raw/fixture_details/league=39/season=2026/ingest_date=2026-10-19/...`). Each file is an envelope (`ingest_ts`, `run_id`, `endpoint`, `params`, `paging`, `results`, `response`). Two Step Functions workflows, started by EventBridge Scheduler, orchestrate it over 11 competitions: weekly (matches + match details, standings, player season stats) and monthly (leagues, teams, squads).
 
 2. **Processing (Databricks)**: A Databricks Asset Bundle reads the raw S3 data using Auto Loader (cloudFiles), transforms it, and writes Delta tables into the `soccer` Unity Catalog. The Databricks job has three sequential tasks: `team_ingestion` notebook → `playerwhl_task` Python wheel → `silver_layer_task` notebook.
 
@@ -62,6 +62,9 @@ python src/lambda_handler.py
 
 # Start LocalStack
 docker-compose up -d localstack
+
+# Bucket name comes from the environment, not from files
+export TF_VAR_target_bucket_name=<your-bucket>
 
 # Deploy to LocalStack (test workspace)
 cd infra
@@ -125,7 +128,7 @@ databricks bundle run soccer_api_consumer_etl
 ## Key Configuration
 
 - **Soccer API key** is read at Lambda runtime from AWS Secrets Manager (`prod/soccer/api`). The `API_SOCCER_API_KEY` Lambda env var is a fallback path, not the actual key value.
-- **S3 bucket**: `cmurillo-target-bucket` — `TARGET_BUCKET` env var is set automatically by Terraform.
+- **S3 bucket**: never hardcode the bucket name in repo files. Terraform reads it from `TF_VAR_target_bucket_name` (required variable `target_bucket_name`) and passes it to the Lambda as `TARGET_BUCKET`; the Databricks bundle reads it from `BUNDLE_VAR_source_path` (`s3://<bucket>`).
 - **Databricks workspace**: `https://dbc-06090e42-ea4e.cloud.databricks.com`
 - **Databricks cluster** (dev): update `cluster_id` in `databricks.yml` if the cluster changes.
 - **Instance profile ARN** for Databricks→S3 access: configured in `databricks.yml` under `instance_profile_arn`.

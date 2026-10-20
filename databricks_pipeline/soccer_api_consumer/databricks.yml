@@ -20,8 +20,8 @@ variables:
   schema:
     description: The schema to use
   source_path:
+    # no default on purpose: set the BUNDLE_VAR_source_path environment variable (s3://<bucket>)
     description: The source path for data files
-    default: "s3://cmurillo-target-bucket"
   cluster_id:
     description: The ID of the existing cluster to run jobs on
   instance_profile_arn:

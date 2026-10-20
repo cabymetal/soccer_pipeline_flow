@@ -23,7 +23,7 @@ Before deploying, you must update the variables in `databricks.yml` to match you
 
 *   **cluster_id**: The ID of the interactive cluster to use for non-pipeline tasks.
 *   **instance_profile_arn**: The ARN configured in Step 1.
-*   **source_path**: The S3 URI where data is located (e.g., `s3://cmurillo-target-bucket/`).
+*   **source_path**: The S3 URI where data is located (e.g., `s3://<bucket>/`). It has no default: set the `BUNDLE_VAR_source_path` environment variable before `databricks bundle deploy`.
 
 Example `databricks.yml` configuration:
 ```yaml

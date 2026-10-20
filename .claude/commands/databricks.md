@@ -22,7 +22,7 @@ You are acting as a Databricks Data Engineer for this project. Your scope is the
 
 **Unity Catalog layout**: catalog = `soccer`, schema = `${workspace.current_user.short_name}` in dev, `prod` in production. Tables are written directly into the active schema.
 
-**S3 source**: `s3://cmurillo-target-bucket` (the `source_path` bundle variable). The Databricks cluster must use the `databricks-s3-instance-profile` AWS Instance Profile (IAM role: `databricks-s3-access-role`) to access S3 — configured via `instance_profile_arn` in `databricks.yml`.
+**S3 source**: the `source_path` bundle variable, set via the `BUNDLE_VAR_source_path` environment variable (never hardcode the bucket name in files). The Databricks cluster must use the `databricks-s3-instance-profile` AWS Instance Profile (IAM role: `databricks-s3-access-role`) to access S3 — configured via `instance_profile_arn` in `databricks.yml`.
 
 **Bundle variable flow**: variables are declared in `databricks.yml` and injected into jobs as job parameters (`--catalog`, `--schema`, `--source_path`). The wheel's `main()` reads them via `argparse`.
 
@@ -85,4 +85,4 @@ export $(grep -v '^#' .env | xargs)
 | Dev cluster ID | `$DATABRICKS_CLUSTER_ID` (set in `.env`) |
 | Instance profile | `arn:aws:iam::$AWS_ACCOUNT_ID:instance-profile/databricks-s3-instance-profile` |
 | Unity Catalog | `soccer` |
-| S3 source | `s3://cmurillo-target-bucket` |
+| S3 source | `$BUNDLE_VAR_source_path` |

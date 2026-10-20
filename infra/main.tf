@@ -35,7 +35,7 @@ provider "aws" {
 #           S3 Bucket            #   
 ##################################
 resource "aws_s3_bucket" "target_bucket" {
-    bucket = "cmurillo-target-bucket"
+    bucket = var.target_bucket_name
     force_destroy = true
 
     tags = {

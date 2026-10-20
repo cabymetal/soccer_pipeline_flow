@@ -82,7 +82,7 @@ Team season statistics are not fetched. They are derived from the match data in 
 ### Raw Data Layout (S3)
 
 ```text
-s3://cmurillo-target-bucket/raw/{entity}/{partitions}/ingest_date=YYYY-MM-DD/{run_id}_{tag}_pNNN.json
+s3://$TARGET_BUCKET/raw/{entity}/{partitions}/ingest_date=YYYY-MM-DD/{run_id}_{tag}_pNNN.json
 
 raw/fixture_details/league=39/season=2026/ingest_date=2026-10-19/<run>_fixtures_1208021-1208030_p001.json
 raw/players/season=2026/team=33/ingest_date=2026-10-19/<run>_players_p002.json
@@ -155,9 +155,16 @@ pytest
 aws configure
 ```
 
-### 5. Set Up Terraform Variables (optional)
+### 5. Set Up Terraform Variables
 
-All variables have defaults. To override them, create `infra/terraform.tfvars`:
+The bucket name is not stored in the repository. Set it as an environment variable before running Terraform (and the Databricks bundle):
+
+```bash
+export TF_VAR_target_bucket_name=<your-bucket>          # Terraform
+export BUNDLE_VAR_source_path=s3://<your-bucket>         # Databricks bundle
+```
+
+The other variables have defaults. To override them, create `infra/terraform.tfvars` (gitignored values only, never the bucket name):
 
 ```hcl
 # narrow or extend the competitions
@@ -170,6 +177,7 @@ All variables have defaults. To override them, create `infra/terraform.tfvars`:
 
 **Variables:**
 
+- `target_bucket_name` (required, no default): the raw-zone S3 bucket, from `TF_VAR_target_bucket_name`.
 - `competitions`: competitions to ingest (see above). `type` is `league` (player stats and squads per team) or `cup` (matches only).
 - `api_soccer_api_key`: the **name** of the Secrets Manager secret (default `prod/soccer/api`), not the key itself.
 - `api_max_pages` (default `""`, no cap): set it to `"3"` only on the free API plan.
@@ -263,7 +271,7 @@ The Lambda has 256 MB and a 600 s timeout. Its logs are kept for 30 days.
 
 ### S3 Storage
 
-Data is stored in the `cmurillo-target-bucket` S3 bucket:
+Data is stored in the S3 bucket named by the `TF_VAR_target_bucket_name` environment variable (exposed to the Lambda as `TARGET_BUCKET`):
 
 - Write-only from Lambda, read access for Databricks (instance profile)
 - Private ACL

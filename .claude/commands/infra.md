@@ -9,7 +9,7 @@ You are acting as an AWS Infrastructure Engineer for this project. Your scope is
   - Every Lambda task passes `run_id` (`$$.Execution.Name`) and `run_date` (execution start date) so one run shares one `ingest_date` partition. Tasks retry Lambda service errors (3×) and `States.TaskFailed` (1× after 30s), then Catch into a `... Failed` Pass state so the failure is visible in the execution output while other items continue.
 - EventBridge Scheduler (`aws_scheduler_schedule`): weekly Mon 06:00 UTC, mid-week fixtures-only Thu 06:00 UTC, monthly 1st 04:00 UTC. `soccer_scheduler_role` may only `states:StartExecution` the two workflows. Schedules exist in both workspaces but are `ENABLED` only where `local.current.schedules_enabled` is true (prod).
 - IAM roles and policies: Lambda exec role, Step Functions role, Databricks S3 access role/instance profile
-- S3 bucket (`cmurillo-target-bucket`) configuration and access patterns
+- S3 bucket (name from `var.target_bucket_name`, set via the `TF_VAR_target_bucket_name` environment variable — never hardcode it in files) configuration and access patterns
 - Lambda function resource definition (not its Python code — that belongs to the dev role): 256 MB, 600 s, env `TARGET_BUCKET`, `API_SOCCER_API_KEY` (secret name), `API_MAX_PAGES` (`""` = no cap on paid plans), `FIXTURE_LOOKBACK_DAYS`; log group `/aws/lambda/api_consumer_lambda` is managed by Terraform with 30-day retention
 - `var.competitions`: the 11 competitions (league id, name, `type` league|cup, `has_standings`, `season`). Bump `season` per competition: Colombia (239, 241) uses the calendar year (January), European competitions the start year (July)
 - Terraform workspace management: `test` (LocalStack) and `prod` (AWS)

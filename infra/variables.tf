@@ -4,6 +4,12 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "target_bucket_name" {
+  description = "S3 bucket for the raw zone. No default on purpose: set it with the TF_VAR_target_bucket_name environment variable"
+  type        = string
+  nullable    = false
+}
+
 variable "api_soccer_api_key" {
   description = "API key for the API Soccer service"
   type        = string
