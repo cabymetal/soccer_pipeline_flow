@@ -370,7 +370,7 @@ These calls reach the real API-Football service and use your quota.
 - LocalStack is not running: `docker ps | grep localstack`
 - Check the endpoint URL in `locals.tf`
 
-**"couldn't find resource" (Secrets Manager)**
+#### "couldn't find resource" (Secrets Manager)
 
 - Create the `prod/soccer/api` secret in LocalStack first
 
